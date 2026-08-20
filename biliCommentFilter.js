@@ -245,19 +245,15 @@
             json.data.replies = replies.filter(r => {
                 if (!r) return false;
 
-                // log(`[RAW JSON] [#1]`);
-                // log(r);
-
                 // 主评论过滤
-                if (isBanUser(r.member)) {
-                    log(r);
-                    log('[BLOCK MAIN USER]', r.member?.uname);
+                const r_result = isBanUser(r.member);
+                if (r_result.status) {
+                    log(`${r}\r\n[BLOCK MAIN USER] ${r.member?.uname}, ${r_result.reason}`);
                     return false;
                 }
 
                 if (isBanComment(r.content?.message)) {
-                    log(r);
-                    log('[BLOCK MAIN TEXT]', r.content?.message);
+                    log(`${r}\r\n[BLOCK MAIN TEXT] ${r.content?.message}`);
                     return false;
                 }
 
@@ -267,14 +263,12 @@
 
                         const rr_result = isBanUser(rr.member);
                         if (rr_result.status) {
-                            log(rr);
-                            log(`[BLOCK SUB USER] ${rr.member?.uname}, ${rr_result.reason}`);
+                            log(`${rr}\r\n[BLOCK SUB USER] ${rr.member?.uname}, ${rr_result.reason}`);
                             return false;
                         }
 
                         if (isBanComment(rr.content?.message)) {
-                            log(rr);
-                            log('[BLOCK SUB TEXT]', rr.content?.message);
+                            log(`${rr}\r\n[BLOCK SUB TEXT] ${rr.content?.message}`);
                             return false;
                         }
 
