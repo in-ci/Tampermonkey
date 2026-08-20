@@ -3,6 +3,7 @@
 // @namespace    biliCommentFilter
 // @version      1.0.2
 // @description  Hook API response，过滤评论后再返回浏览器渲染
+// @author       inci
 // @license      MIT
 // @updateURL    https://raw.githubusercontent.com/in-ci/Tampermonkey/main/biliCommentFilter.js
 // @downloadURL  https://raw.githubusercontent.com/in-ci/Tampermonkey/main/biliCommentFilter.js
