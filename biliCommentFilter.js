@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bilibili 评论API拦截过滤
 // @namespace    biliCommentFilter
-// @version      1.0.1
+// @version      1.0.2
 // @description  Hook API response，过滤评论后再返回浏览器渲染
 // @license      MIT
 // @updateURL    https://raw.githubusercontent.com/in-ci/Tampermonkey/main/biliCommentFilter.js
@@ -69,13 +69,22 @@
     const warn = (...args) => DEBUG && console.warn('%c[BiliFilter]', 'color:orange;font-weight:bold', ...args);
 
     /**
+     * return
+     */
+    function retResult(status = false, reason = '') {
+        return { status, reason };
+    }
+
+    /**
     * 创建关键词匹配器 , 支持:
     * 普通关键词: "交流群"
     * 正则: "/交流群\d+/"
     */
     function createKeywordReg(list) {
         if (!Array.isArray(list) || list.length === 0) {
-            return /$a/;
+            return {
+                test() { return false; }
+            };
         }
 
         const regexList = [];
@@ -108,7 +117,9 @@
 
         // 过滤后没有有效规则
         if (regexList.length === 0) {
-            return /$a/;
+            return {
+                test() { return false; }
+            };
         }
 
         /*
@@ -183,29 +194,41 @@
 
     // 判断用户是否需要屏蔽
     function isBanUser(member) {
-        if (!member) return false;
+        if (!member) {
+            return retResult();
+        }
 
         // 屏蔽低于 banBelowLevel等级 的用户
         const level = member.level_info.current_level || 6;
-        if (level < banBelowLevel) return true;
+        if (level < banBelowLevel) {
+            return retResult(true, `用户等级匹配(${level})`);
+        }
 
         // 屏蔽用户
         const name = member.uname || '';
 
         // 模糊匹配用户名
-        if (isBanNameRegex(name)) return true;
+        if (isBanNameRegex(name)) {
+            return retResult(true, `用户名规则匹配(${name})`);
+        }
 
         // 精确匹配用户名
-        if (isBanNameExact(name)) return true;
+        if (isBanNameExact(name)) {
+            return retResult(true, `用户名精确匹配(${name})`);
+        }
 
         // 精确匹配UID
         const uid = member.mid || '';
-        if (isBanUidExact(uid)) return true;
+        if (isBanUidExact(uid)) {
+            return retResult(true, `UID精确匹配(${uid})`);
+        }
 
         const sign = member.sign || '';
-        if (isBanSignRegex(sign)) return true;
+        if (isBanSignRegex(sign)) {
+            return retResult(true, `用户简介规则匹配(${sign})`);
+        }
 
-        return false;
+        return retResult();
     }
 
     /*************************************************
@@ -240,8 +263,20 @@
                 // 楼中楼过滤
                 if (Array.isArray(r.replies)) {
                     r.replies = r.replies.filter(rr => {
-                        if (isBanUser(rr.member)) return false;
-                        if (isBanComment(rr.content?.message)) return false;
+
+                        const rr_result = isBanUser(rr.member);
+                        if (rr_result.status) {
+                            log(rr);
+                            log(`[BLOCK SUB USER] ${rr.member?.uname}, ${rr_result.reason}`);
+                            return false;
+                        }
+
+                        if (isBanComment(rr.content?.message)) {
+                            log(rr);
+                            log('[BLOCK SUB TEXT]', rr.content?.message);
+                            return false;
+                        }
+
                         return true;
                     });
                 }
