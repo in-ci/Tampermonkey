@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bilibili 评论API拦截过滤
 // @namespace    biliCommentFilter
-// @version      1.0.2
+// @version      1.0.3
 // @description  Hook API response，过滤评论后再返回浏览器渲染
 // @author       inci
 // @license      MIT
