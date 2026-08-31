@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         知乎问题API拦截过滤
 // @namespace    zhihuProblemFilter
-// @version      1.0.4
+// @version      1.0.5
 // @description  Hook API response，过滤问题后再返回浏览器渲染
 // @author       inci
 // @license      MIT
@@ -137,11 +137,11 @@
       patterns: TARGET_PATTERNS_Q_V3,
       prefix: TARGET_PATTERNS_Q_V3_PREFIX,
     },
-    {
-      tag: FilterTag.Q,
-      patterns: TARGET_PATTERNS_Q_V4,
-      prefix: TARGET_PATTERNS_Q_V4_PREFIX,
-    },
+    // {
+    //   tag: FilterTag.Q,
+    //   patterns: TARGET_PATTERNS_Q_V4,
+    //   prefix: TARGET_PATTERNS_Q_V4_PREFIX,
+    // },
   ];
 
   function matchTarget(url) {
