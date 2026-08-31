@@ -118,18 +118,29 @@
     A: "A",
   });
 
-  const TARGET_PATTERNS_Q_PREFIX = "/api/v3/";
-  const TARGET_PATTERNS_Q = [
-    /\/api\/v3\/moments\/[^/?]+\/activities(?:\?|$)/,
-    /\/api\/v3\/feed\/topstory\/recommend(?:\?|$)/,
+  const TARGET_PATTERNS_Q_V3_PREFIX = "/api/v3/";
+  const TARGET_PATTERNS_Q_V3 = [
+    /\/api\/v3\/moments\/[^/?]+\/activities(?:\?|$)/, // 用户动态
+    /\/api\/v3\/feed\/topstory\/recommend(?:\?|$)/, // 知乎首页
+  ];
+
+  // /api/v4/members/xxxxxxx/answers?
+  const TARGET_PATTERNS_Q_V4_PREFIX = "/api/v4/";
+  const TARGET_PATTERNS_Q_V4 = [
+    /\/api\/v4\/members\/[^/?]+\/answers(?:\?|$)/, // 用户回答
   ];
 
   // 将多个数组统一管理，带标签
   const PATTERN_GROUPS = [
     {
       tag: FilterTag.Q,
-      patterns: TARGET_PATTERNS_Q,
-      prefix: TARGET_PATTERNS_Q_PREFIX,
+      patterns: TARGET_PATTERNS_Q_V3,
+      prefix: TARGET_PATTERNS_Q_V3_PREFIX,
+    },
+    {
+      tag: FilterTag.Q,
+      patterns: TARGET_PATTERNS_Q_V4,
+      prefix: TARGET_PATTERNS_Q_V4_PREFIX,
     },
   ];
 
