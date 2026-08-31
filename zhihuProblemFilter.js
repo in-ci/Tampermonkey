@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         知乎问题API拦截过滤
 // @namespace    zhihuProblemFilter
-// @version      1.0.1
+// @version      1.0.3
 // @description  Hook API response，过滤问题后再返回浏览器渲染
 // @author       inci
 // @license      MIT
@@ -40,7 +40,7 @@
   let banQuestionUserNameExactMap = [];
 
   // 屏蔽提问 问题提出的用户UID （精准匹配）
-  let banQuestionUserUidExactMap = ["ds-54-36"];
+  let banQuestionUserUidExactMap = ["ds-54-36", "71-40-19-83-89"];
 
   // 屏蔽提问 问题提出的用户简介 （正则匹配）
   let banQuestionUserBioRegexMap = [];
@@ -53,7 +53,7 @@
   let banAnswerUserNameExactMap = [];
 
   // 屏蔽回答 回答的用户UID （精准匹配）
-  let banAnswerUserUidExactMap = ["ds-54-36"];
+  let banAnswerUserUidExactMap = ["ds-54-36", "71-40-19-83-89"];
 
   // 屏蔽回答 回答的用户简介 （正则匹配）
   let banAnswerUserBioRegexMap = [];
@@ -65,9 +65,17 @@
    * CONFIG
    * ******************************************************************
    */
+  const DebugLevel = Object.freeze({
+    OFF: 0,
+    TRACE: 1,
+    DEBUG: 2,
+    INFO: 3,
+    WARN: 4,
+    ERROR: 5,
+  });
 
-  // DEBUG 开关
-  const DEBUG = true;
+  // 当前调试级别
+  const CURRENT_LEVEL = DebugLevel.DEBUG;
 
   // 等待其他脚本 Hook fetch 的时间。  50ms 检查一次。
   const FETCH_CHECK_INTERVAL = 50;
@@ -77,22 +85,25 @@
 
   const JS_NAMESPACE = "zhihuProblemFilter";
 
-  // DEBUG 打印
-  const log = (...args) =>
-    DEBUG &&
-    console.log(
-      "%c[" + JS_NAMESPACE + "]",
-      "color:#00a1d6;font-weight:bold",
-      ...args,
-    );
+  // 通用日志工厂
+  const createLogger =
+    (level, method, color) =>
+    (...args) => {
+      if (CURRENT_LEVEL >= level && level !== DebugLevel.OFF) {
+        console[method](
+          `%c[${JS_NAMESPACE}][${Object.keys(DebugLevel).find((k) => DebugLevel[k] === level)}]`,
+          `color:${color};font-weight:bold`,
+          ...args,
+        );
+      }
+    };
 
-  const warn = (...args) =>
-    DEBUG &&
-    console.warn(
-      "%c[" + JS_NAMESPACE + "]",
-      "color:orange;font-weight:bold",
-      ...args,
-    );
+  // 各级别日志函数
+  const trace = createLogger(DebugLevel.TRACE, "debug", "#888"); // 灰色
+  const debug = createLogger(DebugLevel.DEBUG, "log", "#00a1d6"); // 蓝色
+  const info = createLogger(DebugLevel.INFO, "info", "#2ecc71"); // 绿色
+  const warn = createLogger(DebugLevel.WARN, "warn", "orange"); // 橙色
+  const error = createLogger(DebugLevel.ERROR, "error", "#e74c3c"); // 红色
 
   /*************************************************
    * TARGET URL
@@ -102,18 +113,30 @@
     A: "A",
   });
 
-  const TARGET_PATTERNS_A = [
+  const TARGET_PATTERNS_Q_PREFIX = "https://www.zhihu.com/api";
+  const TARGET_PATTERNS_Q = [
     /\/api\/v3\/moments\/[^/?]+\/activities(?:\?|$)/,
     /\/api\/v3\/feed\/topstory\/recommend(?:\?|$)/,
   ];
 
   // 将多个数组统一管理，带标签
-  const PATTERN_GROUPS = [{ tag: FilterTag.Q, patterns: TARGET_PATTERNS_A }];
+  const PATTERN_GROUPS = [
+    {
+      tag: FilterTag.Q,
+      patterns: TARGET_PATTERNS_Q,
+      prefix: TARGET_PATTERNS_Q_PREFIX,
+    },
+  ];
 
   function matchTarget(url) {
     if (typeof url !== "string") return { matched: false, tag: null };
 
     for (const group of PATTERN_GROUPS) {
+      // 先做字符串前缀检查（O(1)），排除绝大多数无关请求
+      if (!url.startsWith(group.prefix)) {
+        continue;
+      }
+
       if (group.patterns.some((re) => re.test(url))) {
         return { matched: true, tag: group.tag };
       }
@@ -187,10 +210,7 @@
         }
 
         return regexList.some((reg) => {
-          /*
-           * 防止未来误使用 g 标记
-           * 导致 lastIndex 影响结果
-           */
+          // 防止未来误使用 g 标记 , 导致 lastIndex 影响结果
           reg.lastIndex = 0;
           return reg.test(text);
         });
@@ -283,9 +303,7 @@
       return input;
     }
 
-    /*
-     * fetch(Request)
-     */
+    // fetch(Request)
     if (input && typeof input.url === "string") {
       return input.url;
     }
@@ -300,87 +318,68 @@
   /**
    * headline: 简介
    *
+   * filterQuestionData 返回 { changed: boolean, data: object }
    */
 
-  function filterReplyData(json, source = "") {
-    // log("[FILTER]", "source =", source, json);
+  function filterQuestionData(json, source = "") {
+    trace("[filterQuestionData]", "source =", source, json);
 
-    try {
-      const sData = json?.data;
-      if (!Array.isArray(sData)) return json;
+    const sData = json?.data;
+    // 无数据时直接返回原引用（安全，未修改）
+    if (!Array.isArray(sData)) return { changed: false, result: json };
 
-      json.data = sData.filter((jd) => {
-        if (!jd) return false;
+    let changed = false;
+    const filteredData = sData.filter((jd) => {
+      if (!jd) {
+        changed = true;
+        return false;
+      }
 
-        // 问题屏蔽
-        const q_title = jd.target.question.title;
+      // 问题屏蔽
+      const q_title = jd.target?.question?.title;
+      if (matchKeywordRegex(q_title, banRules.question.title)) {
+        info(`[BLOCK Question] ${q_title}`);
+        changed = true;
+        return false;
+      }
 
-        if (matchKeywordRegex(q_title, banRules.question.title)) {
-          log(`[QuestionTitle] ${q_title}`);
-          return false;
-        }
+      // 提问者屏蔽
+      const q_author = jd.target?.question?.author;
 
-        // 提问者屏蔽
-        const q_author = jd.target.question.author;
+      debug(`author name: ${q_author.name} ,
+        url_token: ${q_author.url_token} , headline: ${q_author.headline}`);
 
-        // log(`[filterReplyData] question author name: ${jd.target.question.author.name} ,
-        //    url_token: ${jd.target.question.author.url_token} ,
-        //    headline: ${jd.target.question.author.headline}`);
+      const q_result = isBanUser(q_author, banRules.q_user);
+      if (q_result.status) {
+        info(
+          `[BLOCK Question] ${q_title}, ${q_author.name}, ${q_result.reason}`,
+        );
+        changed = true;
+        return false;
+      }
 
-        const q_result = isBanUser(q_author, banRules.q_user);
+      // 回答者屏蔽
+      const a_author = jd.target?.author;
 
-        if (q_result.status) {
-          log(
-            `[BLOCK Question] ${q_title}, ${q_author.name}, ${q_result.reason}`,
-          );
-          return false;
-        }
+      debug(`answer name: ${a_author.name} ,
+        url_token: ${a_author.url_token} ,  headline: ${a_author.headline}`);
 
-        // 回答者屏蔽
-        const a_author = jd.target.author;
+      const a_result = isBanUser(a_author, banRules.a_user);
+      if (a_result.status) {
+        info(`[BLOCK Answer] ${q_title}, ${a_author.name}, ${a_result.reason}`);
+        changed = true;
+        return false;
+      }
 
-        // log(`[filterReplyData] question answer name: ${jd.target.author.name} ,
-        //   url_token: ${jd.target.author.url_token} ,
-        //    headline: ${jd.target.author.headline}`);
-
-        const a_result = isBanUser(a_author, banRules.a_user);
-
-        if (a_result.status) {
-          log(
-            `[BLOCK Answer] ${q_title}, ${a_author.name}, ${a_result.reason}`,
-          );
-          return false;
-        }
-
-        return true;
-      });
-
-      return json;
-    } catch (e) {
-      warn("[FILTER ERROR]", e);
-      return json;
-    }
-  }
-
-  /*************************************************
-   * RESPONSE -> NEW RESPONSE
-   *************************************************/
-
-  function createFilteredResponse(response, filteredData) {
-    // 复制 Response Headers
-    const headers = new Headers(response.headers);
-
-    headers.delete("content-length");
-    headers.delete("content-encoding");
-    headers.set("content-type", "application/json");
-
-    const body = JSON.stringify(filteredData);
-
-    return new Response(body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: headers,
+      return true;
     });
+
+    //  无变化时零拷贝返回
+    if (!changed) {
+      return { changed: false, result: json };
+    }
+
+    return { changed: true, result: { ...json, data: filteredData } };
   }
 
   /*************************************************
@@ -401,8 +400,12 @@
 
     window.fetch = async function (...args) {
       const input = args[0];
-
       const url = getFetchUrl(input);
+
+      // 空 URL 快速拒绝，跳过 matchTarget 调用
+      if (!url) {
+        return previousFetch.apply(this, args);
+      }
 
       // 匹配URL
       const { matched, tag } = matchTarget(url);
@@ -412,7 +415,7 @@
         return previousFetch.apply(this, args);
       }
 
-      // log("[TARGET]", url);
+      trace("[TARGET]", url);
 
       // 先获取 response。
       let response;
@@ -420,58 +423,53 @@
       try {
         response = await previousFetch.apply(this, args);
       } catch (e) {
-        error("[FETCH ERROR]", url, e);
+        warn("[FETCH ERROR]", url, e);
         throw e;
       }
 
-      /*
-       * JSON 处理失败时，
-       * 必须仍然返回原始 response。
-       */
+      // JSON 处理失败时，必须仍然返回原始 response。
       try {
         // clone 不会消耗原 Response。
         const clone = response.clone();
-
-        /*
-         *
-         */
         // 读取 JSON。
         const json = await clone.json();
 
-        // log("[JSON OK]", url, json);
+        trace("[JSON OK]", url, json);
 
-        /*
-         *
-         */
+        let new_json = json;
+        let changed = false;
 
-        let filtered = json;
         // 执行过滤。
-
         if (tag === FilterTag.Q) {
-          filtered = filterReplyData(json, "fetch");
+          const fqd = filterQuestionData(json, "fetch");
+          changed = fqd.changed;
+          new_json = fqd.result;
         }
 
-        /*
-         * 创建新的 Response。
-         */
-        const newResponse = createFilteredResponse(response, filtered);
+        // 未修改 → 直接返回原始 response，跳过 clone/serialize
+        if (!changed) {
+          trace("[NO CHANGE]", url);
+          return response;
+        }
 
-        // log("[FILTERED RESPONSE]", url);
+        trace("[FILTERED RESPONSE]", url);
 
-        return newResponse;
+        // 返回新的 Response。
+        return new Response(JSON.stringify(new_json), {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+        });
       } catch (e) {
-        /*
-         * 不影响知乎正常请求。
-         */
-        warn("[FILTER FAILED]", url, e);
-
+        // 不影响知乎正常请求。
+        error("[FILTER FAILED]", url, e);
         return response;
       }
     };
 
     hookInstalled = true;
 
-    // log("[INSTALL OK]", "fetch hook installed");
+    trace("[INSTALL OK]", "fetch hook installed");
 
     return true;
   }
@@ -479,68 +477,42 @@
   /*************************************************
    * WAIT OTHER SCRIPT
    *************************************************/
-
   function waitForFetchHook() {
-    /*
-     * 第一次记录。
-     */
-    const initialFetch = window.fetch;
-
     const startTime = Date.now();
+    let lastFetch = window.fetch;
+    let delay = FETCH_CHECK_INTERVAL;
 
-    let lastFetch = initialFetch;
+    trace("[WAIT]", "waiting for another fetch hook...");
 
-    // log("[WAIT]", "waiting for another fetch hook...");
-
-    const timer = setInterval(() => {
+    const check = () => {
       const currentFetch = window.fetch;
 
-      /*
-       * fetch 发生变化：
-       *
-       * 说明其他脚本已经重新赋值
-       * window.fetch。
-       */
-      if (currentFetch !== initialFetch) {
-        clearInterval(timer);
-
-        // log("[WAIT DONE]", "window.fetch changed");
-
+      if (currentFetch !== lastFetch) {
+        trace("[WAIT DONE]", "window.fetch changed");
         installFetchHookSafe();
-
         return;
       }
 
-      /*
-       * 超时。
-       *
-       * 如果其他脚本没有 Hook fetch，
-       * 我们也可以自己 Hook。
-       */
       if (
         FETCH_CHECK_TIMEOUT > 0 &&
         Date.now() - startTime >= FETCH_CHECK_TIMEOUT
       ) {
-        clearInterval(timer);
-
         warn("[WAIT TIMEOUT]", "installing own fetch hook");
-
         installFetchHookSafe();
-
         return;
       }
 
-      // 防止某些脚本不断替换 fetch。
-      if (currentFetch !== lastFetch) {
-        lastFetch = currentFetch;
-      }
-    }, FETCH_CHECK_INTERVAL);
+      delay = Math.min(delay * 1.5, 500); // 指数退避，上限 500ms
+      setTimeout(check, delay);
+    };
+
+    setTimeout(check, delay);
   }
 
   /*************************************************
    * INIT
    *************************************************/
-  // log("zhihuProblemFilter started");
+  trace("zhihuProblemFilter started");
 
   waitForFetchHook();
 })();
