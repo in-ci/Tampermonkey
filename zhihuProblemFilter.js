@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         知乎问题API拦截过滤
 // @namespace    zhihuProblemFilter
-// @version      1.0.5
+// @version      1.0.6
 // @description  Hook API response，过滤问题后再返回浏览器渲染
 // @author       inci
 // @license      MIT
@@ -30,7 +30,15 @@
 
   // ==================== 问题屏蔽配置 ====================
   // 屏蔽提问 标题关键字（正则匹配）
-  let banQuestionTitleRegexMap = [];
+      let banQuestionTitleRegexMap = [
+        "复制粘贴","泥石流","买电脑","网站推荐","宏大叙事","流量卡","凡人修仙","乒乓球","动物法","天涯","房价","春晚","汽车","伪史","值得关注","汉服","中医","学生党","相亲",
+        "黑神话","华为","鸿蒙","国足","电竞","内存","斩杀线","正能量","小说推荐","预言","黄金","旅游","耽美","山姆","单机","高考","漫画","人口","以色列","伊朗","外挂","散户",
+        "月销量","烂尾楼","韭菜",
+
+        "/[Aa炒].?股/","/[牢大][Aa]/","/股[民票市价]/","/[牛熊]市/","/[Uu][Pp].?主/","/[Nn][Gg][Aa]/","/[Mm][Aa][Cc]/","/[Gg][Dd][Pp]/","/[男女][权拳性朋装]/","[男女]主[义文内外]",
+        "/[结订求新离]婚/","/少年(团|组合)/","/如果(给你|只能|你要|你想|是你)/","/概率(多少|是|大)/","/的(小说|文)/","/[篮足排]球/","/马(督工|斯克|前卒)/","/民族(主义|问题|融合)/",
+        "/[甜虐]文/","/如何(化解)/","/[基股]金/","/[涨跌]停/","/[开收]盘/","/[Kk均]线/"
+    ];
 
   // ==================== 提问屏蔽配置 ====================
   // 屏蔽提问 问题提出的用户名 （正则匹配）
@@ -348,13 +356,13 @@
       // 提问者屏蔽
       const q_author = jd.target?.question?.author;
 
-      debug(`author name: ${q_author.name} ,
-        url_token: ${q_author.url_token} , headline: ${q_author.headline}`);
+      debug(`author name: ${q_author?.name} ,
+        url_token: ${q_author?.url_token} , headline: ${q_author?.headline}`);
 
       const q_result = isBanUser(q_author, banRules.q_user);
       if (q_result.status) {
         info(
-          `[BLOCK Question] ${q_title}, ${q_author.name}, ${q_result.reason}`,
+          `[BLOCK Question] ${q_title}, ${q_author?.name}, ${q_result.reason}`,
         );
         changed = true;
         return false;
@@ -363,12 +371,12 @@
       // 回答者屏蔽
       const a_author = jd.target?.author;
 
-      debug(`answer name: ${a_author.name} ,
-        url_token: ${a_author.url_token} ,  headline: ${a_author.headline}`);
+      debug(`answer name: ${a_author?.name} ,
+        url_token: ${a_author?.url_token} ,  headline: ${a_author?.headline}`);
 
       const a_result = isBanUser(a_author, banRules.a_user);
       if (a_result.status) {
-        info(`[BLOCK Answer] ${q_title}, ${a_author.name}, ${a_result.reason}`);
+        info(`[BLOCK Answer] ${q_title}, ${a_author?.name}, ${a_result.reason}`);
         changed = true;
         return false;
       }
