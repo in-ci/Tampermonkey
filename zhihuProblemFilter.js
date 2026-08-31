@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         知乎问题API拦截过滤
 // @namespace    zhihuProblemFilter
-// @version      1.0.3
+// @version      1.0.4
 // @description  Hook API response，过滤问题后再返回浏览器渲染
 // @author       inci
 // @license      MIT
@@ -75,7 +75,7 @@
   });
 
   // 当前调试级别
-  const CURRENT_LEVEL = DebugLevel.DEBUG;
+  const CURRENT_LEVEL = DebugLevel.INFO;
 
   // 等待其他脚本 Hook fetch 的时间。  50ms 检查一次。
   const FETCH_CHECK_INTERVAL = 50;
@@ -86,24 +86,29 @@
   const JS_NAMESPACE = "zhihuProblemFilter";
 
   // 通用日志工厂
-  const createLogger =
-    (level, method, color) =>
-    (...args) => {
-      if (CURRENT_LEVEL >= level && level !== DebugLevel.OFF) {
-        console[method](
-          `%c[${JS_NAMESPACE}][${Object.keys(DebugLevel).find((k) => DebugLevel[k] === level)}]`,
+  const createLogger = (level, color) => {
+    // 预计算级别名称，只执行一次
+    const levelName = Object.keys(DebugLevel).find(
+      (k) => DebugLevel[k] === level,
+    );
+
+    return (...args) => {
+      // 阈值越小越详细，level 越大越严重
+      if (CURRENT_LEVEL !== DebugLevel.OFF && CURRENT_LEVEL <= level) {
+        console.log(
+          `%c[${JS_NAMESPACE}][${levelName}]`,
           `color:${color};font-weight:bold`,
           ...args,
         );
       }
     };
-
+  };
   // 各级别日志函数
-  const trace = createLogger(DebugLevel.TRACE, "debug", "#888"); // 灰色
-  const debug = createLogger(DebugLevel.DEBUG, "log", "#00a1d6"); // 蓝色
-  const info = createLogger(DebugLevel.INFO, "info", "#2ecc71"); // 绿色
-  const warn = createLogger(DebugLevel.WARN, "warn", "orange"); // 橙色
-  const error = createLogger(DebugLevel.ERROR, "error", "#e74c3c"); // 红色
+  const trace = createLogger(DebugLevel.TRACE, "#888"); // 灰色
+  const debug = createLogger(DebugLevel.DEBUG, "#00a1d6"); // 蓝色
+  const info = createLogger(DebugLevel.INFO, "#2ecc71"); // 绿色
+  const warn = createLogger(DebugLevel.WARN, "orange"); // 橙色
+  const error = createLogger(DebugLevel.ERROR, "#e74c3c"); // 红色
 
   /*************************************************
    * TARGET URL
@@ -113,7 +118,7 @@
     A: "A",
   });
 
-  const TARGET_PATTERNS_Q_PREFIX = "https://www.zhihu.com/api";
+  const TARGET_PATTERNS_Q_PREFIX = "/api/v3/";
   const TARGET_PATTERNS_Q = [
     /\/api\/v3\/moments\/[^/?]+\/activities(?:\?|$)/,
     /\/api\/v3\/feed\/topstory\/recommend(?:\?|$)/,
@@ -133,7 +138,7 @@
 
     for (const group of PATTERN_GROUPS) {
       // 先做字符串前缀检查（O(1)），排除绝大多数无关请求
-      if (!url.startsWith(group.prefix)) {
+      if (!url.includes(group.prefix)) {
         continue;
       }
 
@@ -156,14 +161,12 @@
    * 普通关键词: "交流群"
    * 正则: "/交流群\d+/"
    */
+
+  // 共享空匹配器，避免重复创建
+  const NEVER_MATCH = { test: () => false };
+
   function createKeywordReg(list) {
-    if (!Array.isArray(list) || list.length === 0) {
-      return {
-        test() {
-          return false;
-        },
-      };
-    }
+    if (!Array.isArray(list) || list.length === 0) return NEVER_MATCH;
 
     const regexList = [];
 
@@ -171,7 +174,6 @@
       if (!item) continue;
 
       const rule = String(item).trim();
-
       if (!rule) continue;
 
       // 判断正则格式  /xxx/
@@ -180,24 +182,17 @@
       if (match) {
         try {
           regexList.push(new RegExp(match[1]));
-        } catch (e) {
-          warn("[" + JS_NAMESPACE + "] 无效正则:", rule);
+        } catch (_) {
+          warn(`[${JS_NAMESPACE}] 无效正则: ${rule}`);
         }
       } else {
-        // 普通字符串
-        // 转义正则字符
+        // 普通字符串 → 转义后构造正则
         regexList.push(new RegExp(rule.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
       }
     }
 
     // 过滤后没有有效规则
-    if (regexList.length === 0) {
-      return {
-        test() {
-          return false;
-        },
-      };
-    }
+    if (regexList.length === 0) return NEVER_MATCH;
 
     /*
      * 返回一个具有 test 方法的匹配器
@@ -205,9 +200,7 @@
      */
     return {
       test(text) {
-        if (!text) {
-          return false;
-        }
+        if (!text) return false;
 
         return regexList.some((reg) => {
           // 防止未来误使用 g 标记 , 导致 lastIndex 影响结果
@@ -297,7 +290,6 @@
   /*************************************************
    * GET FETCH URL
    *************************************************/
-
   function getFetchUrl(input) {
     if (typeof input === "string") {
       return input;
@@ -314,7 +306,6 @@
   /*************************************************
    * FILTER
    *************************************************/
-
   /**
    * headline: 简介
    *
@@ -403,17 +394,13 @@
       const url = getFetchUrl(input);
 
       // 空 URL 快速拒绝，跳过 matchTarget 调用
-      if (!url) {
-        return previousFetch.apply(this, args);
-      }
+      if (!url) return previousFetch.apply(this, args);
 
       // 匹配URL
       const { matched, tag } = matchTarget(url);
 
       // 非目标 URL
-      if (!matched) {
-        return previousFetch.apply(this, args);
-      }
+      if (!matched) return previousFetch.apply(this, args);
 
       trace("[TARGET]", url);
 
