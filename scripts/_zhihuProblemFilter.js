@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         知乎问题API拦截过滤
-// @version      1.0.8
+// @version      2.0.0
 // @description  Hook API response，过滤问题后再返回浏览器渲染
 // @author       inci
 // @license      MIT
@@ -79,6 +79,8 @@
    * CONFIG
    * ******************************************************************
    */
+  const JS_NAMESPACE = "zhihuProblemFilter";
+
   const DebugLevel = Object.freeze({
     OFF: 0,
     TRACE: 1,
@@ -90,14 +92,6 @@
 
   // 当前调试级别
   const CURRENT_LEVEL = DebugLevel.INFO;
-
-  // 等待其他脚本 Hook fetch 的时间。  50ms 检查一次。
-  const FETCH_CHECK_INTERVAL = 50;
-
-  // 最长等待时间。  0 = 一直等待
-  const FETCH_CHECK_TIMEOUT = 10000;
-
-  const JS_NAMESPACE = "zhihuProblemFilter";
 
   // 通用日志工厂
   const createLogger = (level, color) => {
@@ -181,15 +175,10 @@
     return { status, reason };
   }
 
-  /**
-   * 创建关键词匹配器 , 支持:
-   * 普通关键词: "交流群"
-   * 正则: "/交流群\d+/"
-   */
-
   // 共享空匹配器，避免重复创建
   const NEVER_MATCH = { test: () => false };
 
+  // 创建关键词匹配器 , 支持: 普通关键词 ， 正则(格式： "/xxxxxxx/")
   function createKeywordReg(list) {
     if (!Array.isArray(list) || list.length === 0) return NEVER_MATCH;
 
@@ -313,22 +302,6 @@
   }
 
   /*************************************************
-   * GET FETCH URL
-   *************************************************/
-  function getFetchUrl(input) {
-    if (typeof input === "string") {
-      return input;
-    }
-
-    // fetch(Request)
-    if (input && typeof input.url === "string") {
-      return input.url;
-    }
-
-    return "";
-  }
-
-  /*************************************************
    * FILTER
    *************************************************/
   /**
@@ -362,8 +335,8 @@
       // 提问者屏蔽
       const q_author = jd.target?.question?.author;
 
-      debug(`author name: ${q_author?.name} ,
-        url_token: ${q_author?.url_token} , headline: ${q_author?.headline}`);
+      // debug(`author name: ${q_author?.name} ,
+      //   url_token: ${q_author?.url_token} , headline: ${q_author?.headline}`);
 
       const q_result = isBanUser(q_author, banRules.q_user);
       if (q_result.status) {
@@ -377,12 +350,14 @@
       // 回答者屏蔽
       const a_author = jd.target?.author;
 
-      debug(`answer name: ${a_author?.name} ,
-        url_token: ${a_author?.url_token} ,  headline: ${a_author?.headline}`);
+      // debug(`answer name: ${a_author?.name} ,
+      //   url_token: ${a_author?.url_token} ,  headline: ${a_author?.headline}`);
 
       const a_result = isBanUser(a_author, banRules.a_user);
       if (a_result.status) {
-        info(`[BLOCK Answer] ${q_title}, ${a_author?.name}, ${a_result.reason}`);
+        info(
+          `[BLOCK Answer] ${q_title}, ${a_author?.name}, ${a_result.reason}`,
+        );
         changed = true;
         return false;
       }
@@ -399,48 +374,104 @@
   }
 
   /*************************************************
-   * FETCH HOOK
+   * 状态
    *************************************************/
-  let hookInstalled = false;
+  const wrapperCache = new WeakMap();
+  // 当前真正保存到 window.fetch 的函数。
+  let currentFetch = null;
+  // 防止内部状态更新时产生递归。
+  let updating = false;
+  // 标记 accessor 是否已经安装。
+  let accessorInstalled = false;
 
-  function installFetchHook() {
-    if (hookInstalled) {
-      return true;
+  /*************************************************
+   * 获取 fetch URL
+   *************************************************/
+
+  function getFetchURL(input) {
+    // fetch("https://xxx")
+    if (typeof input === "string") {
+      return input;
     }
 
-    const previousFetch = window.fetch;
-
-    if (typeof previousFetch !== "function") {
-      return false;
+    // fetch(new URL(...))
+    if (input instanceof URL) {
+      return input.href;
     }
 
-    window.fetch = async function (...args) {
-      const input = args[0];
-      const url = getFetchUrl(input);
+    // fetch(new Request(...))
+    if (input && typeof input.url === "string") {
+      return input.url;
+    }
+
+    return "";
+  }
+
+  /**
+   * 使用 apply 保持 this。arguments 可以避免额外创建数组。
+   */
+
+  // 同步重入保护
+  let inFetchHook = false;
+
+  function createFetchWrapper(originalFetch) {
+    // 理论上不应该发生。
+    if (typeof originalFetch !== "function") {
+      return originalFetch;
+    }
+
+    // fetch 复用
+    const cached = wrapperCache.get(originalFetch);
+    if (cached) {
+      return cached;
+    }
+
+    const wrappedFetch = async function (input, init) {
+      if (inFetchHook) {
+        trace("[REENTRANT]", getFetchURL(input));
+
+        return originalFetch.apply(this, arguments);
+      }
+
+      const url = getFetchURL(input);
 
       // 空 URL 快速拒绝，跳过 matchTarget 调用
-      if (!url) return previousFetch.apply(this, args);
+      if (!url) return originalFetch.apply(this, arguments);
 
       // 匹配URL
       const { matched, tag } = matchTarget(url);
 
       // 非目标 URL
-      if (!matched) return previousFetch.apply(this, args);
+      if (!matched) return originalFetch.apply(this, arguments);
 
-      trace("[TARGET]", url);
+      // info("[FETCH 过滤URL]", url || input);
 
-      // 先获取 response。
+      // 标记
+      inFetchHook = true;
+
+      trace("[HOOK ENTER]", url);
+
+      // 先获取 responsePromise
+      let responsePromise;
       let response;
 
       try {
-        response = await previousFetch.apply(this, args);
+        // response = await originalFetch.apply(this, arguments);
+        // 这里只获取 Promise。
+        responsePromise = originalFetch.apply(this, arguments);
       } catch (e) {
         warn("[FETCH ERROR]", url, e);
         throw e;
+      } finally {
+        // Promise 已经拿到。同步调用链已经结束。立即恢复 false。
+        inFetchHook = false;
+
+        trace("[HOOK EXIT]", url);
       }
 
       // JSON 处理失败时，必须仍然返回原始 response。
       try {
+        response = await responsePromise;
         // clone 不会消耗原 Response。
         const clone = response.clone();
         // 读取 JSON。
@@ -460,11 +491,11 @@
 
         // 未修改 → 直接返回原始 response，跳过 clone/serialize
         if (!changed) {
-          trace("[NO CHANGE]", url);
+          debug("[NO CHANGE]", url);
           return response;
         }
 
-        trace("[FILTERED RESPONSE]", url);
+        debug("[FILTERED RESPONSE]", url);
 
         // 返回新的 Response。
         return new Response(JSON.stringify(new_json), {
@@ -479,52 +510,112 @@
       }
     };
 
-    hookInstalled = true;
+    // 缓存 wrapper。
+    wrapperCache.set(originalFetch, wrappedFetch);
 
-    trace("[INSTALL OK]", "fetch hook installed");
-
-    return true;
+    return wrappedFetch;
   }
 
   /*************************************************
-   * WAIT OTHER SCRIPT
+   * 更新 window.fetch
    *************************************************/
-  function waitForFetchHook() {
-    const startTime = Date.now();
-    let lastFetch = window.fetch;
-    let delay = FETCH_CHECK_INTERVAL;
 
-    trace("[WAIT]", "waiting for another fetch hook...");
+  function setFetch(nextFetch) {
+    // fetch 必须是函数。
+    if (typeof nextFetch !== "function") {
+      return;
+    }
 
-    const check = () => {
-      const currentFetch = window.fetch;
+    // 防止重复设置。
+    if (nextFetch === currentFetch) {
+      return;
+    }
 
-      if (currentFetch !== lastFetch) {
-        trace("[WAIT DONE]", "window.fetch changed");
-        installFetchHook();
-        return;
-      }
-
-      if (
-        FETCH_CHECK_TIMEOUT > 0 &&
-        Date.now() - startTime >= FETCH_CHECK_TIMEOUT
-      ) {
-        warn("[WAIT TIMEOUT]", "installing own fetch hook");
-        installFetchHook();
-        return;
-      }
-
-      delay = Math.min(delay * 1.5, 500); // 指数退避，上限 500ms
-      setTimeout(check, delay);
-    };
-
-    setTimeout(check, delay);
+    const wrapped = createFetchWrapper(nextFetch);
+    currentFetch = wrapped;
   }
 
   /*************************************************
-   * INIT
+   * 安装 fetch accessor
    *************************************************/
-  trace("zhihuProblemFilter started");
 
-  waitForFetchHook();
+  function installFetchInterceptor() {
+    if (accessorInstalled) {
+      return;
+    }
+
+    const win = window;
+    // 获取 window 自己是否已经存在 fetch 属性。
+    const ownDescriptor = Object.getOwnPropertyDescriptor(win, "fetch");
+    // 获取当前 fetch。
+    const initialFetch = win.fetch;
+
+    if (typeof initialFetch !== "function") {
+      error("window.fetch is not available");
+      return;
+    }
+
+    // 获取当前 Fetch
+    currentFetch = createFetchWrapper(initialFetch);
+
+    /*********************************************
+     * 创建 window.fetch accessor
+     *********************************************/
+
+    // enumerable：尽量保持原属性的可枚举性。
+    const enumerable = ownDescriptor ? ownDescriptor.enumerable : false;
+
+    try {
+      Object.defineProperty(win, "fetch", {
+        configurable: true,
+        enumerable,
+
+        get() {
+          return currentFetch;
+        },
+
+        set(nextFetch) {
+          // 防止内部操作导致递归。
+          if (updating) {
+            return;
+          }
+
+          if (typeof nextFetch !== "function") {
+            // 正常情况下 fetch 应该始终是函数。
+            currentFetch = nextFetch;
+            return;
+          }
+
+          updating = true;
+          try {
+            currentFetch = createFetchWrapper(nextFetch);
+          } finally {
+            updating = false;
+          }
+
+          debug("[FETCH REPLACED]", "another script replaced window.fetch");
+        },
+      });
+
+      debug("[INSTALL OK]", "fetch interceptor installed");
+
+      accessorInstalled = true;
+    } catch (error) {
+      // 某些环境可能禁止重新定义 fetch。此时采用降级方案：直接包装当前 fetch。
+      debug("[INSTALL FAILED]", error);
+
+      try {
+        win.fetch = currentFetch;
+      } catch (e) {
+        error("unable to hook window.fetch", e);
+      }
+    }
+  }
+
+  /*************************************************
+   * 初始化
+   *************************************************/
+  trace("[START]", "知乎过滤脚本启动");
+
+  installFetchInterceptor();
 })();
