@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         Bilibili 评论API拦截过滤
-// @version      1.0.4
+// @version      1.0.5
 // @description  Hook API response，过滤评论后再返回浏览器渲染
 // @author       inci
 // @license      MIT
 // @namespace    https://github.com/in-ci/Tampermonkey
-// @updateURL    https://raw.githubusercontent.com/in-ci/Tampermonkey/main/biliCommentFilter.js
-// @downloadURL  https://raw.githubusercontent.com/in-ci/Tampermonkey/main/biliCommentFilter.js
+// @updateURL    https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/_biliCommentFilter.js
+// @downloadURL  https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/_biliCommentFilter.js
 // @match        *://*.bilibili.com/*
 // @exclude      *://api.bilibili.com/*
 // @exclude      *://api.*.bilibili.com/*
@@ -40,7 +40,7 @@
 
   // 屏蔽指定 用户名 的评论（模糊匹配）
   let banUserNameRegexMap = [
-    "bili_", "/[Tt]0/", "流量", "大王"
+    "bili_", "/[Tt][0o]/", "流量", "大王"
   ];
 
   // 依据用户简介关键字屏蔽（模糊匹配）

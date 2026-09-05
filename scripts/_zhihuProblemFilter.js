@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         知乎问题API拦截过滤
-// @version      1.0.7
+// @version      1.0.8
 // @description  Hook API response，过滤问题后再返回浏览器渲染
 // @author       inci
 // @license      MIT
 // @namespace    https://github.com/in-ci/Tampermonkey
-// @updateURL    https://raw.githubusercontent.com/in-ci/Tampermonkey/main/zhihuProblemFilter.js
-// @downloadURL  https://raw.githubusercontent.com/in-ci/Tampermonkey/main/zhihuProblemFilter.js
+// @updateURL    https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/_zhihuProblemFilter.js
+// @downloadURL  https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/_zhihuProblemFilter.js
 // @match        *://*.zhihu.com/*
 // @exclude      *://static.zhihu.com.com/*
 // @exclude      *://unpkg.zhimg.com/*
@@ -403,7 +403,7 @@
    *************************************************/
   let hookInstalled = false;
 
-  function installFetchHookSafe() {
+  function installFetchHook() {
     if (hookInstalled) {
       return true;
     }
@@ -501,7 +501,7 @@
 
       if (currentFetch !== lastFetch) {
         trace("[WAIT DONE]", "window.fetch changed");
-        installFetchHookSafe();
+        installFetchHook();
         return;
       }
 
@@ -510,7 +510,7 @@
         Date.now() - startTime >= FETCH_CHECK_TIMEOUT
       ) {
         warn("[WAIT TIMEOUT]", "installing own fetch hook");
-        installFetchHookSafe();
+        installFetchHook();
         return;
       }
 
