@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         知乎问题API拦截过滤
-// @version      2.0.0
+// @version      2.0.1
 // @description  Hook API response，过滤问题后再返回浏览器渲染
 // @author       inci
 // @license      MIT
 // @namespace    https://github.com/in-ci/Tampermonkey
 // @updateURL    https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/_zhihuProblemFilter.js
 // @downloadURL  https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/_zhihuProblemFilter.js
+// @require      https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/common/common-log.js
 // @match        *://*.zhihu.com/*
 // @exclude      *://static.zhihu.com.com/*
 // @exclude      *://unpkg.zhimg.com/*
@@ -81,42 +82,9 @@
    */
   const JS_NAMESPACE = "zhihuProblemFilter";
 
-  const DebugLevel = Object.freeze({
-    OFF: 0,
-    TRACE: 1,
-    DEBUG: 2,
-    INFO: 3,
-    WARN: 4,
-    ERROR: 5,
-  });
+  const { DebugLevel, createLogger } = __CommonLib;
 
-  // 当前调试级别
-  const CURRENT_LEVEL = DebugLevel.INFO;
-
-  // 通用日志工厂
-  const createLogger = (level, color) => {
-    // 预计算级别名称，只执行一次
-    const levelName = Object.keys(DebugLevel).find(
-      (k) => DebugLevel[k] === level,
-    );
-
-    return (...args) => {
-      // 阈值越小越详细，level 越大越严重
-      if (CURRENT_LEVEL !== DebugLevel.OFF && CURRENT_LEVEL <= level) {
-        console.log(
-          `%c[${JS_NAMESPACE}][${levelName}]`,
-          `color:${color};font-weight:bold`,
-          ...args,
-        );
-      }
-    };
-  };
-  // 各级别日志函数
-  const trace = createLogger(DebugLevel.TRACE, "#888"); // 灰色
-  const debug = createLogger(DebugLevel.DEBUG, "#00a1d6"); // 蓝色
-  const info = createLogger(DebugLevel.INFO, "#2ecc71"); // 绿色
-  const warn = createLogger(DebugLevel.WARN, "orange"); // 橙色
-  const error = createLogger(DebugLevel.ERROR, "#e74c3c"); // 红色
+  const log = createLogger(JS_NAMESPACE, DebugLevel.INFO);
 
   /*************************************************
    * TARGET URL
@@ -197,7 +165,7 @@
         try {
           regexList.push(new RegExp(match[1]));
         } catch (_) {
-          warn(`[${JS_NAMESPACE}] 无效正则: ${rule}`);
+          log.warn(`无效正则: ${rule}`);
         }
       } else {
         // 普通字符串 → 转义后构造正则
@@ -311,7 +279,7 @@
    */
 
   function filterQuestionData(json, source = "") {
-    trace("[filterQuestionData]", "source =", source, json);
+    log.trace("[filterQuestionData]", "source =", source, json);
 
     const sData = json?.data;
     // 无数据时直接返回原引用（安全，未修改）
@@ -327,7 +295,7 @@
       // 问题屏蔽
       const q_title = jd.target?.question?.title;
       if (matchKeywordRegex(q_title, banRules.question.title)) {
-        info(`[BLOCK Question] ${q_title}`);
+        log.info(`[BLOCK Question] ${q_title}`);
         changed = true;
         return false;
       }
@@ -335,12 +303,12 @@
       // 提问者屏蔽
       const q_author = jd.target?.question?.author;
 
-      // debug(`author name: ${q_author?.name} ,
+      // log.debug(`author name: ${q_author?.name} ,
       //   url_token: ${q_author?.url_token} , headline: ${q_author?.headline}`);
 
       const q_result = isBanUser(q_author, banRules.q_user);
       if (q_result.status) {
-        info(
+        log.info(
           `[BLOCK Question] ${q_title}, ${q_author?.name}, ${q_result.reason}`,
         );
         changed = true;
@@ -350,12 +318,12 @@
       // 回答者屏蔽
       const a_author = jd.target?.author;
 
-      // debug(`answer name: ${a_author?.name} ,
+      // log.debug(`answer name: ${a_author?.name} ,
       //   url_token: ${a_author?.url_token} ,  headline: ${a_author?.headline}`);
 
       const a_result = isBanUser(a_author, banRules.a_user);
       if (a_result.status) {
-        info(
+        log.info(
           `[BLOCK Answer] ${q_title}, ${a_author?.name}, ${a_result.reason}`,
         );
         changed = true;
@@ -428,7 +396,7 @@
 
     const wrappedFetch = async function (input, init) {
       if (inFetchHook) {
-        trace("[REENTRANT]", getFetchURL(input));
+        log.trace("[REENTRANT]", getFetchURL(input));
 
         return originalFetch.apply(this, arguments);
       }
@@ -444,12 +412,12 @@
       // 非目标 URL
       if (!matched) return originalFetch.apply(this, arguments);
 
-      // info("[FETCH 过滤URL]", url || input);
+      // log.info("[FETCH 过滤URL]", url || input);
 
       // 标记
       inFetchHook = true;
 
-      trace("[HOOK ENTER]", url);
+      log.trace("[HOOK ENTER]", url);
 
       // 先获取 responsePromise
       let responsePromise;
@@ -460,13 +428,13 @@
         // 这里只获取 Promise。
         responsePromise = originalFetch.apply(this, arguments);
       } catch (e) {
-        warn("[FETCH ERROR]", url, e);
+        log.warn("[FETCH ERROR]", url, e);
         throw e;
       } finally {
         // Promise 已经拿到。同步调用链已经结束。立即恢复 false。
         inFetchHook = false;
 
-        trace("[HOOK EXIT]", url);
+        log.trace("[HOOK EXIT]", url);
       }
 
       // JSON 处理失败时，必须仍然返回原始 response。
@@ -477,7 +445,7 @@
         // 读取 JSON。
         const json = await clone.json();
 
-        trace("[JSON OK]", url, json);
+        log.trace("[JSON OK]", url, json);
 
         let new_json = json;
         let changed = false;
@@ -491,11 +459,11 @@
 
         // 未修改 → 直接返回原始 response，跳过 clone/serialize
         if (!changed) {
-          debug("[NO CHANGE]", url);
+          log.debug("[NO CHANGE]", url);
           return response;
         }
 
-        debug("[FILTERED RESPONSE]", url);
+        log.debug("[FILTERED RESPONSE]", url);
 
         // 返回新的 Response。
         return new Response(JSON.stringify(new_json), {
@@ -505,7 +473,7 @@
         });
       } catch (e) {
         // 不影响知乎正常请求。
-        error("[FILTER FAILED]", url, e);
+        log.error("[FILTER FAILED]", url, e);
         return response;
       }
     };
@@ -551,7 +519,7 @@
     const initialFetch = win.fetch;
 
     if (typeof initialFetch !== "function") {
-      error("window.fetch is not available");
+      log.error("window.fetch is not available");
       return;
     }
 
@@ -593,21 +561,21 @@
             updating = false;
           }
 
-          debug("[FETCH REPLACED]", "another script replaced window.fetch");
+          log.debug("[FETCH REPLACED]", "another script replaced window.fetch");
         },
       });
 
-      debug("[INSTALL OK]", "fetch interceptor installed");
+      log.debug("[INSTALL OK]", "fetch interceptor installed");
 
       accessorInstalled = true;
-    } catch (error) {
+    } catch (err) {
       // 某些环境可能禁止重新定义 fetch。此时采用降级方案：直接包装当前 fetch。
-      debug("[INSTALL FAILED]", error);
+      log.debug("[INSTALL FAILED]", err);
 
       try {
         win.fetch = currentFetch;
       } catch (e) {
-        error("unable to hook window.fetch", e);
+        log.error("unable to hook window.fetch", e);
       }
     }
   }
@@ -615,7 +583,7 @@
   /*************************************************
    * 初始化
    *************************************************/
-  trace("[START]", "知乎过滤脚本启动");
+  log.trace("[START]", "知乎过滤脚本启动");
 
   installFetchInterceptor();
 })();
