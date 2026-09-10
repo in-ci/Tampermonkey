@@ -1,7 +1,9 @@
+/* global globalThis */
+
 // ==UserScript==
 // @name         Common Log
 // @namespace    inci.common
-// @version      1.0.0
+// @version      1.0.1
 // @description  Common logging library for Tampermonkey
 // @author       inci
 // @license      MIT
