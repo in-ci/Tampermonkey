@@ -2,7 +2,7 @@
 
 // ==UserScript==
 // @name         X(Twitter) API拦截过滤
-// @version      1.0.1
+// @version      1.0.2
 // @description  Hook API response，过滤问题后再返回浏览器渲染
 // @author       inci
 // @license      MIT
@@ -20,17 +20,20 @@
   "use strict";
 
   /******************************* 过滤内容匹配 ***************************************/
-
-  // 帖子回复评论发布者UID 正则匹配
-  let banPostCommentAuthorUidRegex = [];
   // 帖子回复评论发布者UID 精确匹配
   let banPostCommentAuthorUidExact = [];
-  // 帖子回复评论发布者 正则匹配
-  let banPostCommentAuthorNameRegex = [];
-  // 帖子回复评论发布者 精确匹配
-  let banPostCommentAuthorNameExact = [];
+
+  // 帖子回复评论发布者用户名 正则匹配
+  // prettier-ignore
+  let banPostCommentAuthorNameRegex = [
+    "/[男女]?炮友?/","配对","同城","主页","无偿约","开云"
+  ];
+
   // 帖子回复评论
-  let banPostCommentContent = ["保存"];
+  // prettier-ignore
+  let banPostCommentContent = [
+    "/@[Gg][Ee][Tt][Xx][Bb][Oo][TtXx]/","/@.*?保存视频/","/[没比][她我它他](骚|sao)/","福不黑","真顶不住"
+  ];
 
   /*******************************下方内容不要修改***************************************/
   /**
@@ -53,7 +56,7 @@
    * ERROR : 错误           log.error()
    */
   const { DebugLevel, createLogger } = globalThis.__CommonLib;
-  const log = createLogger(JS_NAMESPACE, DebugLevel.TRACE);
+  const log = createLogger(JS_NAMESPACE, DebugLevel.INFO);
 
   /*************************************************
    * TARGET URL
@@ -154,10 +157,6 @@
   // 创建匹配规则映射
   const banRules = {
     posts: {
-      // 帖子回复评论发布者UID 正则匹配
-      post_CommentAuthorUidRegex: createKeywordReg(
-        banPostCommentAuthorUidRegex,
-      ),
       // 帖子回复评论发布者UID 精确匹配
       post_CommentAuthorUidExact: new Set(banPostCommentAuthorUidExact),
 
@@ -165,8 +164,6 @@
       post_CommentAuthorNameRegex: createKeywordReg(
         banPostCommentAuthorNameRegex,
       ),
-      // 帖子回复评论发布者 精确匹配
-      post_CommentAuthorNameExact: new Set(banPostCommentAuthorNameExact),
 
       // 帖子回复评论
       post_CommentContent: createKeywordReg(banPostCommentContent),
@@ -190,14 +187,9 @@
     // UID
     const bUid = user.screen_name || "";
 
-    // 正则匹配UID
-    if (matchKeywordRegex(bUid, reg.post_CommentAuthorUidRegex)) {
-      return retResult(true, `UID规则匹配(${bUid})`);
-    }
-
     // 精确匹配UID
     if (matchKeywordExact(bUid, reg.post_CommentAuthorUidExact)) {
-      return retResult(true, `用户名精确匹配(${bUid})`);
+      return retResult(true, `UID精确匹配(${bUid})`);
     }
 
     // 用户名
@@ -205,11 +197,6 @@
     // 模糊匹配用户名
     if (matchKeywordRegex(bName, reg.post_CommentAuthorNameRegex)) {
       return retResult(true, `用户名规则匹配(${bName})`);
-    }
-
-    // 精确匹配用户名
-    if (matchKeywordExact(bName, reg.post_CommentAuthorNameExact)) {
-      return retResult(true, `用户名精确匹配(${bName})`);
     }
 
     return retResult();
