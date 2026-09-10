@@ -88,6 +88,18 @@
    */
   const JS_NAMESPACE = "zhihuProblemFilter";
 
+  /**
+   * log
+   * 
+   * DebugLevel             log使用
+   * 
+   * OFF   : 关闭全部日志
+   * TRACE : 最详细         log.trace()
+   * DEBUG : 调试信息       log.debug()
+   * INFO  : 一般信息       log.info()
+   * WARN  : 警告           log.warn()
+   * ERROR : 错误           log.error()
+   */
   const { DebugLevel, createLogger } = globalThis.__CommonLib;
 
   const log = createLogger(JS_NAMESPACE, DebugLevel.INFO);
