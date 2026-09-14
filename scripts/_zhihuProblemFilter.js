@@ -2,7 +2,7 @@
 
 // ==UserScript==
 // @name         知乎问题API拦截过滤
-// @version      2.0.2
+// @version      2.0.3
 // @description  Hook API response，过滤问题后再返回浏览器渲染
 // @author       inci
 // @license      MIT
@@ -44,7 +44,8 @@
     "/[Aa炒].?股/","/[牢大][Aa]/","/股[民票市价]/","/[牛熊]市/","/[Uu][Pp].?主/","/[Nn][Gg][Aa]/","/[Mm][Aa][Cc]/",
     "/[Gg][Dd][Pp]/","/[男女][权拳性朋装]/","/[男女]主[义文内外小]/","/[结订求新离]婚/","/少年(团|组合)/","/[甜虐]文/",
     "/如果(给你|只能|你要|你想|是你)/","/概率(多少|是|大)/","/的(小说|文)/","/[篮足排]球/","/马(督工|斯克|前卒)/",
-    "/民族(主义|问题|融合)/","/如何(化解)/","/[基股]金/","/[涨跌]停/","/[开收]盘/","/[Kk均]线/","/嫖[娼客]/"
+    "/民族(主义|问题|融合)/","/如何(化解)/","/[基股]金/","/[涨跌]停/","/[开收]盘/","/[Kk均]线/","/嫖[娼客]/",
+    "/[IiEe][NnSs][TtFf][JjPp]/"
   ];
 
   // ==================== 提问屏蔽配置 ====================
@@ -57,7 +58,7 @@
   // 屏蔽提问 问题提出的用户UID （精准匹配）
   // prettier-ignore
   let banQuestionUserUidExactMap = [
-    "ds-54-36","zhao-zi-han-58-57","71-40-19-83-89","da-shen-shuo-82","17sui-shao-nu-59",
+    "ds-54-36","zhao-zi-han-58-57","71-40-19-83-89","da-shen-shuo-82","17sui-shao-nu-59","yi-bo-zui-shuai",
 
     // 提问机器人
     "97-88-88-89"
@@ -180,11 +181,14 @@
       if (!rule) continue;
 
       // 判断正则格式  /xxx/
-      const match = rule.match(/^\/(.+)\/$/);
+      // const match = rule.match(/^\/(.+)\/$/);
+
+      // 支持 /pattern/flags 格式，flags 可选
+      const match = rule.match(/^\/(.+)\/([gimsuy]*)$/);
 
       if (match) {
         try {
-          regexList.push(new RegExp(match[1]));
+          regexList.push(new RegExp(match[1], match[2]));
         } catch (_) {
           log.warn(`无效正则: ${rule}`);
         }
