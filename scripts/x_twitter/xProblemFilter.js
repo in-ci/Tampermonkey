@@ -2,14 +2,15 @@
 
 // ==UserScript==
 // @name         X(Twitter) API拦截过滤
-// @version      1.0.2
+// @version      1.0.5
 // @description  Hook API response，过滤问题后再返回浏览器渲染
 // @author       inci
 // @license      MIT
 // @namespace    https://github.com/in-ci/Tampermonkey
-// @updateURL    https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/_xProblemFilter.js
-// @downloadURL  https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/_xProblemFilter.js
-// @require      https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/common/common-log.js
+// @updateURL    https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/x_twitter/xProblemFilter.js
+// @downloadURL  https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/x_twitter/xProblemFilter.js
+// @require      https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/x_twitter/xKeyword.js
+// @require      https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/_common/common-logs.js
 // @match        *://*.x.com/*
 // @grant        none
 // @run-at       document-start
@@ -19,32 +20,15 @@
 (() => {
   "use strict";
 
-  /******************************* 过滤内容匹配 ***************************************/
-  // 帖子回复评论发布者UID 精确匹配
-  let banPostCommentAuthorUidExact = [];
-
-  // 帖子回复评论发布者用户名 正则匹配
-  // prettier-ignore
-  let banPostCommentAuthorNameRegex = [
-    "/[男女]?炮友?/","配对","同城","主页","无偿约","开云"
-  ];
-
-  // 帖子回复评论
-  // prettier-ignore
-  let banPostCommentContent = [
-    "/@[Gg][Ee][Tt][Xx][Bb][Oo][TtXx]/","/@.*?保存视频/","/[没比][她我它他](骚|sao)/","福不黑","真顶不住"
-  ];
-
-  /*******************************下方内容不要修改***************************************/
-  /**
-   * ******************************************************************
-   * CONFIG
-   * ******************************************************************
-   */
+  // 脚本名称
   const JS_NAMESPACE = "X(Twitter)ProblemFilter";
 
+  // 过滤关键字 xKeyword.js导出
+  const { postCommentUidExact, postCommentNameRegex, postCommentText } =
+    globalThis.__X_TwitterLib;
+
   /**
-   * log
+   * log  common-logs.js导出
    *
    * DebugLevel             log使用
    *
@@ -158,15 +142,13 @@
   const banRules = {
     posts: {
       // 帖子回复评论发布者UID 精确匹配
-      post_CommentAuthorUidExact: new Set(banPostCommentAuthorUidExact),
+      post_CommentAuthorUidExact: new Set(postCommentUidExact),
 
       // 帖子回复评论发布者 正则匹配
-      post_CommentAuthorNameRegex: createKeywordReg(
-        banPostCommentAuthorNameRegex,
-      ),
+      post_CommentAuthorNameRegex: createKeywordReg(postCommentNameRegex),
 
       // 帖子回复评论
-      post_CommentContent: createKeywordReg(banPostCommentContent),
+      post_CommentContent: createKeywordReg(postCommentText),
     },
   };
 
