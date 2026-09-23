@@ -2,13 +2,14 @@
 
 // ==UserScript==
 // @name         知乎问题API拦截过滤
-// @version      2.0.3
+// @version      2.0.4
 // @description  Hook API response，过滤问题后再返回浏览器渲染
 // @author       inci
 // @license      MIT
 // @namespace    https://github.com/in-ci/Tampermonkey
-// @updateURL    https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/_zhihuProblemFilter.js
-// @downloadURL  https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/_zhihuProblemFilter.js
+// @updateURL    https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/zhihu/zhihuProblemFilter.js
+// @downloadURL  https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/zhihu/zhihuProblemFilter.js
+// @require      https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/zhihu/zhihuKeyword.js
 // @require      https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/common/common-log.js
 // @match        *://*.zhihu.com/*
 // @exclude      *://static.zhihu.com.com/*
@@ -32,58 +33,69 @@
    *
    * 总优先级： 标题关键字 > 问题提出的用户优先级 > 回答的用户优先级
    */
-
+  /*
   // ==================== 问题屏蔽配置 ====================
   // 屏蔽提问 标题关键字（正则匹配）
   // prettier-ignore
-  let banQuestionTitleRegexMap = [
+  let qTitleRegex = [
     "复制粘贴","泥石流","买电脑","网站推荐","宏大叙事","流量卡","凡人修仙","乒乓球","动物法","天涯","房价","春晚","汽车","伪史",
     "值得关注","汉服","中医","学生党","相亲","黑神话","华为","鸿蒙","国足","电竞","内存","斩杀线","正能量","小说推荐","预言",
     "黄金","旅游","耽美","山姆","单机","高考","漫画","人口","以色列","伊朗","外挂","散户","月销量","烂尾楼","韭菜","剪贴板",
 
-    "/[Aa炒].?股/","/[牢大][Aa]/","/股[民票市价]/","/[牛熊]市/","/[Uu][Pp].?主/","/[Nn][Gg][Aa]/","/[Mm][Aa][Cc]/",
-    "/[Gg][Dd][Pp]/","/[男女][权拳性朋装]/","/[男女]主[义文内外小]/","/[结订求新离]婚/","/少年(团|组合)/","/[甜虐]文/",
-    "/如果(给你|只能|你要|你想|是你)/","/概率(多少|是|大)/","/的(小说|文)/","/[篮足排]球/","/马(督工|斯克|前卒)/",
-    "/民族(主义|问题|融合)/","/如何(化解)/","/[基股]金/","/[涨跌]停/","/[开收]盘/","/[Kk均]线/","/嫖[娼客]/",
-    "/[IiEe][NnSs][TtFf][JjPp]/"
+    "/[Aa炒].?股/","/[牢大][Aa]/","/股[民票市价]/","/[牛熊]市/","/[Uu][Pp].?主/","/nga/i","/mac/i", "/gdp/i","/嫖[娼客]/",
+    "/[男女][权拳性朋装]/","/[男女]主[义文内外小]/","/[结订求新离]婚/","/少年(团|组合)/","/[甜虐]文/","/[篮足排乓棒毛]球/",
+    "/如果(给你|只能|你要|你想|是你)/","/概率(多少|是|大)/","/的(小说|文)/","/马(督工|斯克|前卒)/","/[开收]盘/","/[Kk均]线/",
+    "/民族(主义|问题|融合)/","/如何(化解)/","/[基股]金/","/[涨跌]停/","/[IiEe][NnSs][TtFf][JjPp]/"
   ];
 
   // ==================== 提问屏蔽配置 ====================
   // 屏蔽提问 问题提出的用户名 （正则匹配）
-  let banQuestionUserNameRegexMap = [];
+  let qNameRegex = [];
 
   // 屏蔽提问 问题提出的用户名 （精准匹配）
-  let banQuestionUserNameExactMap = [];
+  let qNameExact = [];
 
   // 屏蔽提问 问题提出的用户UID （精准匹配）
   // prettier-ignore
-  let banQuestionUserUidExactMap = [
-    "ds-54-36","zhao-zi-han-58-57","71-40-19-83-89","da-shen-shuo-82","17sui-shao-nu-59","yi-bo-zui-shuai",
+  let qUidExact = [
+    "ds-54-36","zhao-zi-han-58-57","71-40-19-83-89","da-shen-shuo-82","17sui-shao-nu-59","yi-bo-zui-shuai","kiki-8-31-7",
 
     // 提问机器人
     "97-88-88-89"
   ];
 
   // 屏蔽提问 问题提出的用户简介 （正则匹配）
-  let banQuestionUserBioRegexMap = [];
+  let qBioRegex = [];
 
   // ==================== 回答屏蔽配置 ====================
   // 屏蔽回答 回答的用户名 （正则匹配）
-  let banAnswerUserNameRegexMap = [];
+  let aNameRegex = [];
 
   // 屏蔽回答 回答的用户名 （精准匹配）
-  let banAnswerUserNameExactMap = [];
+  let aNameExact = [];
 
   // 屏蔽回答 回答的用户UID （精准匹配）
   // prettier-ignore
-  let banAnswerUserUidExactMap = [
+  let aUidExact = [
     "ds-54-36","zhao-zi-han-58-57","71-40-19-83-89","da-shen-shuo-82","17sui-shao-nu-59"
   ];
 
   // 屏蔽回答 回答的用户简介 （正则匹配）
-  let banAnswerUserBioRegexMap = [];
-
+  let aBioRegex = [];
+*/
   /*******************************下方内容不要修改***************************************/
+
+  const {
+    qTitleRegex,
+    qNameRegex,
+    qNameExact,
+    qUidExact,
+    qBioRegex,
+    aNameRegex,
+    aNameExact,
+    aUidExact,
+    aBioRegex,
+  } = globalThis.__ZhihuLib;
 
   /**
    * ******************************************************************
@@ -232,22 +244,12 @@
   // 创建匹配规则映射
   const banRules = {
     question: {
-      title: createKeywordReg(banQuestionTitleRegexMap),
+      title: createKeywordReg(qTitleRegex),
     },
 
-    q_user: userCreateTemplate(
-      banQuestionUserNameRegexMap,
-      banQuestionUserNameExactMap,
-      banQuestionUserUidExactMap,
-      banQuestionUserBioRegexMap,
-    ),
+    q_user: userCreateTemplate(qNameRegex, qNameExact, qUidExact, qBioRegex),
 
-    a_user: userCreateTemplate(
-      banAnswerUserNameRegexMap,
-      banAnswerUserNameExactMap,
-      banAnswerUserUidExactMap,
-      banAnswerUserBioRegexMap,
-    ),
+    a_user: userCreateTemplate(aNameRegex, aNameExact, aUidExact, aBioRegex),
   };
 
   // 匹配规则辅助函数

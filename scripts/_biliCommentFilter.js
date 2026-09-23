@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Bilibili 评论API拦截过滤
-// @version      1.0.5
+// @version      1.0.6
 // @description  Hook API response，过滤评论后再返回浏览器渲染
 // @author       inci
 // @license      MIT
@@ -35,7 +35,7 @@
 
   // 屏蔽指定 关键字 的评论（模糊匹配）
   let banCommentRegexMap = [
-    "交流群","问了吗","邀请码","大佬帮我","托管日常","打起来","的楼","/^@.*/",
+    "交流群","问了吗","邀请码","大佬帮我","托管日常","打起来","的楼","/^@.*/","/^\d+$/","/^再见了.*/"
   ];
 
   // 屏蔽指定 用户名 的评论（模糊匹配）
