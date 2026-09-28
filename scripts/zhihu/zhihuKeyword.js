@@ -2,7 +2,7 @@
 
 // ==UserScript==
 // @name         知乎过滤的关键词
-// @version      2026.09.28.7.33
+// @version      2026.9.28.8
 // @namespace    https://github.com/in-ci/Tampermonkey
 // @description  知乎过滤的关键词
 // @author       inci

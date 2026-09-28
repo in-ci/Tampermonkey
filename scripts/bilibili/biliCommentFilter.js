@@ -1,6 +1,8 @@
+/* global globalThis */
+
 // ==UserScript==
 // @name         Bilibili 评论API拦截过滤
-// @version      2026.09.28.7.33
+// @version      2026.9.28.8
 // @description  Hook API response，过滤评论后再返回浏览器渲染
 // @author       inci
 // @license      MIT
