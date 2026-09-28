@@ -2,7 +2,7 @@
 
 // ==UserScript==
 // @name         x(twitter)过滤的关键词
-// @version      1.0.0
+// @version      2026.09.28.7.33
 // @namespace    https://github.com/in-ci/Tampermonkey
 // @description  x(twitter)过滤的关键词
 // @author       inci
@@ -18,6 +18,7 @@
   // 精确匹配不支持正则
 
   // 帖子回复评论发布者UID 精确匹配
+  // prettier-ignore
   let postCommentUidExact = [];
 
   // 帖子回复评论发布者用户名 正则匹配

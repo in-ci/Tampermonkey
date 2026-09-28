@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         Bilibili 评论API拦截过滤
-// @version      1.0.6
+// @version      2026.09.28.7.33
 // @description  Hook API response，过滤评论后再返回浏览器渲染
 // @author       inci
 // @license      MIT
 // @namespace    https://github.com/in-ci/Tampermonkey
-// @updateURL    https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/_biliCommentFilter.js
-// @downloadURL  https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/_biliCommentFilter.js
+// @updateURL    https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/bilibili/biliCommentFilter.js
+// @downloadURL  https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/bilibili/biliCommentFilter.js
+// @require      https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/bilibili/biliKeyword.js
+// @require      https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/_common/common-logs.js
 // @match        *://*.bilibili.com/*
 // @exclude      *://api.bilibili.com/*
 // @exclude      *://api.*.bilibili.com/*
@@ -25,44 +27,33 @@
 (() => {
   "use strict";
 
-  // DEBUG 开关
-  const DEBUG = false;
+  // 脚本名称
+  const JS_NAMESPACE = "biliCommentFilter";
 
-  /******************************* 过滤内容匹配 ***************************************/
+  // 过滤关键字 xKeyword.js导出
+  const {
+    commentRegex,
+    nameRegex,
+    signRegex,
+    nameExact,
+    uidExact,
+    belowLevel,
+  } = globalThis.__BilibiliLib;
 
-  // 模糊匹配支持正则，正则格式： /xxxxxx/
-  // 精确匹配不支持正则
-
-  // 屏蔽指定 关键字 的评论（模糊匹配）
-  let banCommentRegexMap = [
-    "交流群","问了吗","邀请码","大佬帮我","托管日常","打起来","的楼","/^@.*/","/^\d+$/","/^再见了.*/"
-  ];
-
-  // 屏蔽指定 用户名 的评论（模糊匹配）
-  let banUserNameRegexMap = [
-    "bili_", "/[Tt][0o]/", "流量", "大王"
-  ];
-
-  // 依据用户简介关键字屏蔽（模糊匹配）
-  let banUserSignRegexMap = [];
-
-  // 屏蔽指定 用户名 的评论（精准匹配）
-  let banUserNameExactMap = [];
-
-  // 屏蔽指定 uid 的评论（精准匹配）
-  let banUserUidExactMap = [];
-
-  // 屏蔽 banBelowLevel 级 以下的评论 ， 例如：3 ，则屏蔽 0、1、2 级下的评论
-  const banBelowLevel = 3;
-
-  /*******************************下方内容不要修改***************************************/
-
-  /*
-   *  DEBUG 打印
+  /**
+   * log  common-logs.js导出
+   *
+   * DebugLevel             log使用
+   *
+   * OFF   : 关闭全部日志
+   * TRACE : 最详细         log.trace()
+   * DEBUG : 调试信息       log.debug()
+   * INFO  : 一般信息       log.info()
+   * WARN  : 警告           log.warn()
+   * ERROR : 错误           log.error()
    */
-  const log = (...args) => DEBUG && console.log("%c[BiliFilter]", "color:#00a1d6;font-weight:bold", ...args);
-
-  const warn = (...args) => DEBUG && console.warn("%c[BiliFilter]", "color:orange;font-weight:bold", ...args);
+  const { DebugLevel, createLogger } = globalThis.__CommonLib;
+  const log = createLogger(JS_NAMESPACE, DebugLevel.INFO);
 
   /**
    * return
@@ -101,7 +92,7 @@
         try {
           regexList.push(new RegExp(match[1]));
         } catch (e) {
-          warn("[BiliFilter] 无效正则:", rule);
+          log.warn("无效正则:", rule);
         }
       } else {
         // 普通字符串
@@ -144,18 +135,18 @@
   // 创建匹配规则映射
   const banRules = {
     comments: {
-      comment: createKeywordReg(banCommentRegexMap),
+      comment: createKeywordReg(commentRegex),
     },
 
     user: {
       // 用户名 模糊匹配
-      nameRegex: createKeywordReg(banUserNameRegexMap),
+      nameRegex: createKeywordReg(nameRegex),
       // 用户名 精确匹配
-      nameExact: new Set(banUserNameExactMap),
+      nameExact: new Set(nameExact),
       // uid 精确匹配
-      uidExact: new Set(banUserUidExactMap),
+      uidExact: new Set(uidExact),
       // 用户简介 模糊匹配
-      signRegex: createKeywordReg(banUserSignRegexMap),
+      signRegex: createKeywordReg(signRegex),
     },
   };
 
@@ -168,36 +159,15 @@
     return !!value && set.has(String(value));
   }
 
-  // 具体内容匹配函数
-  function isBanComment(text) {
-    return matchRegex(text, banRules.comments.comment);
-  }
-
-  function isBanNameRegex(name) {
-    return matchRegex(name, banRules.user.nameRegex);
-  }
-
-  function isBanNameExact(name) {
-    return matchExact(name, banRules.user.nameExact);
-  }
-
-  function isBanUidExact(uid) {
-    return matchExact(uid, banRules.user.uidExact);
-  }
-
-  function isBanSignRegex(sign) {
-    return matchRegex(sign, banRules.user.signRegex);
-  }
-
   // 判断用户是否需要屏蔽
-  function isBanUser(member) {
+  function filterUser(member) {
     if (!member) {
       return retResult();
     }
 
     // 屏蔽低于 banBelowLevel等级 的用户
     const level = member.level_info.current_level || 6;
-    if (level < banBelowLevel) {
+    if (level < belowLevel) {
       return retResult(true, `用户等级匹配(${level})`);
     }
 
@@ -205,23 +175,23 @@
     const name = member.uname || "";
 
     // 模糊匹配用户名
-    if (isBanNameRegex(name)) {
+    if (matchRegex(name, banRules.user.nameRegex)) {
       return retResult(true, `用户名规则匹配(${name})`);
     }
 
     // 精确匹配用户名
-    if (isBanNameExact(name)) {
+    if (matchExact(name, banRules.user.nameExact)) {
       return retResult(true, `用户名精确匹配(${name})`);
     }
 
     // 精确匹配UID
     const uid = member.mid || "";
-    if (isBanUidExact(uid)) {
+    if (matchExact(uid, banRules.user.uidExact)) {
       return retResult(true, `UID精确匹配(${uid})`);
     }
 
     const sign = member.sign || "";
-    if (isBanSignRegex(sign)) {
+    if (matchRegex(sign, banRules.user.signRegex)) {
       return retResult(true, `用户简介规则匹配(${sign})`);
     }
 
@@ -242,32 +212,32 @@
         if (!r) return false;
 
         // 主评论过滤
-        const r_result = isBanUser(r.member);
+        const r_result = filterUser(r.member);
         if (r_result.status) {
-          log(
+          log.debug(
             `${r}\r\n[BLOCK MAIN USER] ${r.member?.uname}, ${r_result.reason}`,
           );
           return false;
         }
 
-        if (isBanComment(r.content?.message)) {
-          log(`${r}\r\n[BLOCK MAIN TEXT] ${r.content?.message}`);
+        if (matchRegex(r.content?.message, banRules.comments.comment)) {
+          log.debug(`${r}\r\n[BLOCK MAIN TEXT] ${r.content?.message}`);
           return false;
         }
 
         // 楼中楼过滤
         if (Array.isArray(r.replies)) {
           r.replies = r.replies.filter((rr) => {
-            const rr_result = isBanUser(rr.member);
+            const rr_result = filterUser(rr.member);
             if (rr_result.status) {
-              log(
+              log.debug(
                 `${rr}\r\n[BLOCK SUB USER] ${rr.member?.uname}, ${rr_result.reason}`,
               );
               return false;
             }
 
-            if (isBanComment(rr.content?.message)) {
-              log(`${rr}\r\n[BLOCK SUB TEXT] ${rr.content?.message}`);
+            if (matchRegex(rr.content?.message, banRules.comments.comment)) {
+              log.debug(`${rr}\r\n[BLOCK SUB TEXT] ${rr.content?.message}`);
               return false;
             }
 
@@ -278,14 +248,14 @@
         return true;
       });
 
-      log(
+      log.debug(
         `[FILTER DONE] ${source}`,
         `before=${before}, after=${json.data.replies.length}`,
       );
 
       return json;
     } catch (e) {
-      warn("[FILTER ERROR]", e);
+      log.warn("[FILTER ERROR]", e);
       return json;
     }
   }
@@ -297,7 +267,6 @@
 
   window.fetch = async function (...args) {
     const url = args[0]?.url || args[0];
-
     const res = await rawFetch(...args);
 
     try {
@@ -305,7 +274,7 @@
         typeof url === "string" &&
         (url.includes("/x/v2/reply") || url.includes("/x/v2/reply/wbi/main"))
       ) {
-        log("[FETCH HIT]", url);
+        log.debug("[FETCH HIT]", url);
 
         const clone = res.clone();
         const json = await clone.json();
@@ -319,7 +288,7 @@
         });
       }
     } catch (e) {
-      warn("[FETCH HOOK ERROR]", e);
+      log.warn("[FETCH HOOK ERROR]", e);
     }
 
     return res;
@@ -342,7 +311,7 @@
 
       try {
         if (this._url?.includes("/x/v2/reply")) {
-          log("[XHR HIT]", this._url);
+          log.debug("[XHR HIT]", this._url);
 
           const json = JSON.parse(this.responseText);
 
@@ -353,7 +322,7 @@
           });
         }
       } catch (e) {
-        warn("[XHR HOOK ERROR]", e);
+        log.warn("[XHR HOOK ERROR]", e);
       }
     });
 
@@ -363,5 +332,5 @@
   /*************************************************
    *  启动提示
    *************************************************/
-  // log('initialized');
+  log.trace("initialized");
 })();

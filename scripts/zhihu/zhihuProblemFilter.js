@@ -2,7 +2,7 @@
 
 // ==UserScript==
 // @name         知乎问题API拦截过滤
-// @version      2.1.0
+// @version      2026.09.28.7.33
 // @description  Hook API response，过滤问题后再返回浏览器渲染
 // @author       inci
 // @license      MIT

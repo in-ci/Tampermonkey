@@ -2,7 +2,7 @@
 
 // ==UserScript==
 // @name         知乎过滤的关键词
-// @version      1.0.0
+// @version      2026.09.28.7.33
 // @namespace    https://github.com/in-ci/Tampermonkey
 // @description  知乎过滤的关键词
 // @author       inci
@@ -39,9 +39,11 @@
 
   // ==================== 提问屏蔽配置 ====================
   // 屏蔽提问 问题提出的用户名 （正则匹配）
+  // prettier-ignore
   let qNameRegex = [];
 
   // 屏蔽提问 问题提出的用户名 （精准匹配）
+  // prettier-ignore
   let qNameExact = [];
 
   // 屏蔽提问 问题提出的用户UID （精准匹配）
@@ -50,17 +52,20 @@
     "ds-54-36","zhao-zi-han-58-57","71-40-19-83-89","da-shen-shuo-82","17sui-shao-nu-59","yi-bo-zui-shuai","kiki-8-31-7",
 
     // 提问机器人
-    "97-88-88-89"
+    "97-88-88-89","jun-ming-qian-nan-wang"
   ];
 
   // 屏蔽提问 问题提出的用户简介 （正则匹配）
+  // prettier-ignore
   let qBioRegex = [];
 
   // ==================== 回答屏蔽配置 ====================
   // 屏蔽回答 回答的用户名 （正则匹配）
+  // prettier-ignore
   let aNameRegex = [];
 
   // 屏蔽回答 回答的用户名 （精准匹配）
+  // prettier-ignore
   let aNameExact = [];
 
   // 屏蔽回答 回答的用户UID （精准匹配）
@@ -70,6 +75,7 @@
   ];
 
   // 屏蔽回答 回答的用户简介 （正则匹配）
+  // prettier-ignore
   let aBioRegex = [];
 
   /*

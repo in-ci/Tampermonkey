@@ -2,7 +2,7 @@
 
 // ==UserScript==
 // @name         X(Twitter) API拦截过滤
-// @version      1.0.5
+// @version      2026.09.28.7.33
 // @description  Hook API response，过滤问题后再返回浏览器渲染
 // @author       inci
 // @license      MIT
