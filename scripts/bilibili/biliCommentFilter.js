@@ -2,7 +2,7 @@
 
 // ==UserScript==
 // @name         Bilibili 评论API拦截过滤
-// @version      2026.10.14.23
+// @version      2026.10.15.0
 // @description  Hook API response，过滤评论后再返回浏览器渲染
 // @author       inci
 // @license      MIT
@@ -377,7 +377,9 @@
       const replies = json?.data?.replies;
       if (!Array.isArray(replies)) return json;
 
-      json.data.replies = replies.filter((r) => {
+      const rLength = replies.length;
+
+      const filteredReplies = replies.filter((r) => {
         if (!r) return false;
 
         // 主评论过滤
@@ -392,32 +394,17 @@
           return false;
         }
 
-        // 楼中楼过滤
-        if (Array.isArray(r.replies)) {
-          r.replies = r.replies.filter((rr) => {
-            const rr_result = filterUser(rr.member);
-            if (rr_result.status) {
-              log.info(`[楼中楼] ${rr.member?.uname} : ${rr_result.reason}`);
-              return false;
-            }
-
-            if (matchRegex(rr.content?.message, banRules.comments.comment)) {
-              log.info(`[楼中楼] ${rr.member?.uname} : ${rr.content?.message}`);
-              return false;
-            }
-
-            return true;
-          });
-        }
-
         return true;
       });
 
-      return json;
+      if (filteredReplies.length !== rLength) {
+        json.data.replies = filteredReplies;
+      }
     } catch (e) {
       log.error("[FILTER ERROR]", e);
-      return json;
     }
+
+    return json;
   }
 
   /**
