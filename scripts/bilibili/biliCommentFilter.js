@@ -2,7 +2,7 @@
 
 // ==UserScript==
 // @name         Bilibili 评论API拦截过滤
-// @version      2026.9.28.8
+// @version      2026.10.14.22
 // @description  Hook API response，过滤评论后再返回浏览器渲染
 // @author       inci
 // @license      MIT
@@ -12,9 +12,6 @@
 // @require      https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/bilibili/biliKeyword.js
 // @require      https://raw.githubusercontent.com/in-ci/Tampermonkey/main/scripts/_common/common-logs.js
 // @match        *://*.bilibili.com/*
-// @exclude      *://api.bilibili.com/*
-// @exclude      *://api.*.bilibili.com/*
-// @exclude      *://*.bilibili.com/api/*
 // @exclude      *://member.bilibili.com/studio/bs-editor/*
 // @exclude      *://t.bilibili.com/h5/dynamic/specification
 // @exclude      *://bbq.bilibili.com/*
@@ -22,7 +19,13 @@
 // @exclude      *://s1.hdslb.com/bfs/seed/jinkela/short/cols/iframe.html
 // @exclude      *://open-live.bilibili.com/*
 // @exclude      *://*.bilibili.com/v/popular/*
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @run-at       document-start
+// @sandbox      raw
+// @grant        unsafeWindow
+// @grant        GM_registerMenuCommand
 // @icon         https://www.bilibili.com/favicon.ico
 // ==/UserScript==
 
@@ -31,16 +34,25 @@
 
   // 脚本名称
   const JS_NAMESPACE = "biliCommentFilter";
+  // 存储 JSON 数据的键名
+  const STORAGE_KEY_DATA = "bili_config_data";
+  // 存储最后更新时间的键名
+  const STORAGE_KEY_UPDATE_TIME = "bili_config_last_update";
+  // 存储远程配置URL的键名
+  const STORAGE_KEY_CONFIG_URL = "bili_config_url";
 
-  // 过滤关键字 xKeyword.js导出
-  const {
-    commentRegex,
-    nameRegex,
-    signRegex,
-    nameExact,
-    uidExact,
-    belowLevel,
-  } = globalThis.__BilibiliLib;
+  // 需要拦截的评论 API 路径
+  const REPLY_API_PATHS = ["x/v2/reply/wbi/main", "/x/v2/reply/reply"];
+
+  function getRequireKV() {
+    // 过滤关键字 biliKeyword.js导出
+
+    const source = globalThis.__BilibiliLib ?? {};
+    // 直接从对象自身获取 keys，无需额外全局变量
+    return Object.fromEntries(
+      Object.keys(source).map((key) => [key, source[key]]),
+    );
+  }
 
   /**
    * log  common-logs.js导出
@@ -57,6 +69,197 @@
   const { DebugLevel, createLogger } = globalThis.__CommonLib;
   const log = createLogger(JS_NAMESPACE, DebugLevel.INFO);
 
+  // 没有保存的 URL 时默认为空，不设置默认远程地址
+  let configUrl = String(GM_getValue(STORAGE_KEY_CONFIG_URL, "") || "").trim();
+  let rawConfig = {}; // 从 URL 拿到的原始 JSON
+  let banRules = null; // 编译后的规则（含 RegExp / Set）
+  let banUserLevel = 0;
+
+  GM_registerMenuCommand("远程配置URL", () => {
+    const savedUrl = String(GM_getValue(STORAGE_KEY_CONFIG_URL, "") || "");
+
+    const input = prompt(
+      "请输入远程配置的URL：\n留空并点击确定可清除 URL。",
+      savedUrl,
+    );
+
+    if (input === null) return;
+
+    const url = input.trim();
+
+    // 清除 URL：使用空配置，不请求远程参数
+    if (!url) {
+      configUrl = "";
+
+      GM_setValue(STORAGE_KEY_CONFIG_URL, "");
+
+      rawConfig = {};
+      banRules = buildBanRules({});
+
+      log.info("[配置 URL] 已清除，当前使用空规则");
+      return;
+    }
+
+    // 验证 URL
+    let parsedUrl;
+
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      alert("URL 格式无效。");
+      return;
+    }
+
+    if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:") {
+      alert("仅支持 HTTP/HTTPS URL。");
+      return;
+    }
+
+    configUrl = url;
+
+    GM_setValue(STORAGE_KEY_CONFIG_URL, configUrl);
+
+    log.info("[配置 URL] 已保存:", configUrl);
+
+    // 立即获取远程配置
+    fetchAndSaveConfig();
+  });
+
+  GM_registerMenuCommand("刷新本地配置", () => {
+    // 立即获取远程配置
+    fetchAndSaveConfig();
+  });
+
+  /** 用当前 rawConfig 重新编译规则 */
+  function buildBanRules(config = rawConfig) {
+    let data =
+      config && typeof config === "object" && !Array.isArray(config)
+        ? config
+        : {};
+
+    if (Object.keys(data).length === 0) {
+      data = getRequireKV();
+    }
+
+    const {
+      commentRegex = [],
+      nameRegex = [],
+      nameExact = [],
+      uidExact = [],
+      signRegex = [],
+      belowLevel = 0,
+    } = data;
+
+    banUserLevel = Number.isFinite(Number(belowLevel)) ? Number(belowLevel) : 0;
+
+    return {
+      comments: {
+        comment: createKeywordReg(commentRegex),
+      },
+      user: {
+        nameRegex: createKeywordReg(nameRegex),
+        nameExact: new Set(Array.isArray(nameExact) ? nameExact : []),
+        uidExact: new Set(Array.isArray(uidExact) ? uidExact : []),
+        signRegex: createKeywordReg(signRegex),
+      },
+    };
+  }
+
+  /** 拉取并应用新配置 */
+  function fetchAndSaveConfig() {
+    if (!configUrl) {
+      log.debug("[配置更新] 未设置远程参数 URL，跳过请求");
+      return;
+    }
+
+    GM_xmlhttpRequest({
+      method: "GET",
+      url: configUrl,
+      responseType: "json",
+      onload(r) {
+        if (r.status >= 200 && r.status < 300) {
+          rawConfig = r.response || {};
+          banRules = buildBanRules(rawConfig);
+
+          GM_setValue(STORAGE_KEY_DATA, rawConfig);
+          GM_setValue(STORAGE_KEY_UPDATE_TIME, Date.now());
+
+          log.info("[配置] 已更新并重新编译规则");
+
+          window.dispatchEvent(
+            new CustomEvent("configReady", { detail: banRules }),
+          );
+        } else {
+          log.error(`[配置更新] 请求失败，HTTP状态码: ${r.status}`);
+        }
+      },
+      onerror: function (error) {
+        log.error("[配置更新] 网络请求异常:", error);
+      },
+    });
+  }
+
+  /**
+   * 初始化与定时器逻辑
+   */
+  function getMsToNextHour() {
+    const now = new Date();
+    const nextHour = new Date(now);
+    // 设置到下一个小时的 0分0秒0毫秒
+    nextHour.setHours(now.getHours() + 1, 0, 0, 0);
+    return nextHour.getTime() - now.getTime();
+  }
+
+  function initScheduler() {
+    const lastUpdateTime = GM_getValue(STORAGE_KEY_UPDATE_TIME, 0);
+    const now = Date.now();
+    const ONE_HOUR = 60 * 60 * 1000;
+
+    // 容错机制：如果距离上次更新已经超过 1 小时（比如用户刚打开电脑/浏览器），立即更新一次
+    if (now - lastUpdateTime >= ONE_HOUR) {
+      log.info("[配置更新] 距离上次更新已超 1 小时，立即执行更新。");
+      fetchAndSaveConfig();
+    }
+
+    // 计算到下一个整点的时间差
+    const delay = getMsToNextHour();
+    log.info(
+      `[配置更新] 距离下一个整点还有 ${Math.round(delay / 60000)} 分钟。`,
+    );
+
+    // 使用 setTimeout 对齐到下一个整点
+    setTimeout(() => {
+      fetchAndSaveConfig(); // 到达整点，执行更新
+
+      // 之后每隔 1 小时（3600000 毫秒）循环执行
+      setInterval(() => {
+        fetchAndSaveConfig();
+      }, ONE_HOUR);
+    }, delay);
+  }
+
+  // 启动时优先读本地缓存
+  const cached = GM_getValue(STORAGE_KEY_DATA, null);
+  if (cached) {
+    // 本地有缓存,  加载本地配置
+    rawConfig = cached;
+    banRules = buildBanRules(rawConfig);
+  } else {
+    // 本地无缓存, 使用空配置
+    rawConfig = {};
+    banRules = buildBanRules({});
+
+    // 设置有 远程URL
+    if (configUrl) {
+      fetchAndSaveConfig();
+    } else {
+      log.info("[配置] 未设置远程参数 URL，使用空规则");
+    }
+  }
+
+  // 启动调度器
+  initScheduler();
+
   /**
    * return
    */
@@ -64,19 +267,12 @@
     return { status, reason };
   }
 
-  /**
-   * 创建关键词匹配器 , 支持:
-   * 普通关键词: "交流群"
-   * 正则: "/交流群\d+/"
-   */
+  // 创建关键词匹配器 , 支持: 普通关键词 ， 正则(格式： "/xxxxxxx/flags")
   function createKeywordReg(list) {
-    if (!Array.isArray(list) || list.length === 0) {
-      return {
-        test() {
-          return false;
-        },
-      };
-    }
+    // 共享空匹配器，避免重复创建
+    const NEVER_MATCH = { test: () => false };
+
+    if (!Array.isArray(list) || list.length === 0) return NEVER_MATCH;
 
     const regexList = [];
 
@@ -88,29 +284,25 @@
       if (!rule) continue;
 
       // 判断正则格式  /xxx/
-      const match = rule.match(/^\/(.+)\/$/);
+      // const match = rule.match(/^\/(.+)\/$/);
+
+      // 支持 /pattern/flags 格式，flags 可选
+      const match = rule.match(/^\/(.+)\/([gimsuy]*)$/);
 
       if (match) {
         try {
-          regexList.push(new RegExp(match[1]));
-        } catch (e) {
+          regexList.push(new RegExp(match[1], match[2]));
+        } catch (_) {
           log.warn("无效正则:", rule);
         }
       } else {
-        // 普通字符串
-        // 转义正则字符
+        // 普通字符串 → 转义后构造正则
         regexList.push(new RegExp(rule.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
       }
     }
 
     // 过滤后没有有效规则
-    if (regexList.length === 0) {
-      return {
-        test() {
-          return false;
-        },
-      };
-    }
+    if (regexList.length === 0) return NEVER_MATCH;
 
     /*
      * 返回一个具有 test 方法的匹配器
@@ -118,39 +310,16 @@
      */
     return {
       test(text) {
-        if (!text) {
-          return false;
-        }
+        if (!text) return false;
 
         return regexList.some((reg) => {
-          /*
-           * 防止未来误使用 g 标记
-           * 导致 lastIndex 影响结果
-           */
+          // 防止未来误使用 g 标记 , 导致 lastIndex 影响结果
           reg.lastIndex = 0;
           return reg.test(text);
         });
       },
     };
   }
-
-  // 创建匹配规则映射
-  const banRules = {
-    comments: {
-      comment: createKeywordReg(commentRegex),
-    },
-
-    user: {
-      // 用户名 模糊匹配
-      nameRegex: createKeywordReg(nameRegex),
-      // 用户名 精确匹配
-      nameExact: new Set(nameExact),
-      // uid 精确匹配
-      uidExact: new Set(uidExact),
-      // 用户简介 模糊匹配
-      signRegex: createKeywordReg(signRegex),
-    },
-  };
 
   // 匹配规则辅助函数
   function matchRegex(text, reg) {
@@ -169,7 +338,7 @@
 
     // 屏蔽低于 banBelowLevel等级 的用户
     const level = member.level_info.current_level || 6;
-    if (level < belowLevel) {
+    if (level < banUserLevel) {
       return retResult(true, `用户等级匹配(${level})`);
     }
 
@@ -203,12 +372,10 @@
   /*************************************************
    *  评论数据过滤核心逻辑
    *************************************************/
-  function filterReplyData(json, source = "") {
+  function filterReplyData(json) {
     try {
       const replies = json?.data?.replies;
       if (!Array.isArray(replies)) return json;
-
-      const before = replies.length;
 
       json.data.replies = replies.filter((r) => {
         if (!r) return false;
@@ -216,14 +383,12 @@
         // 主评论过滤
         const r_result = filterUser(r.member);
         if (r_result.status) {
-          log.debug(
-            `${r}\r\n[BLOCK MAIN USER] ${r.member?.uname}, ${r_result.reason}`,
-          );
+          log.info(`${r.member?.uname} : ${r_result.reason}`);
           return false;
         }
 
         if (matchRegex(r.content?.message, banRules.comments.comment)) {
-          log.debug(`${r}\r\n[BLOCK MAIN TEXT] ${r.content?.message}`);
+          log.info(`${r.member?.uname} : ${r.content?.message}`);
           return false;
         }
 
@@ -232,14 +397,12 @@
           r.replies = r.replies.filter((rr) => {
             const rr_result = filterUser(rr.member);
             if (rr_result.status) {
-              log.debug(
-                `${rr}\r\n[BLOCK SUB USER] ${rr.member?.uname}, ${rr_result.reason}`,
-              );
+              log.info(`[楼中楼] ${rr.member?.uname}, ${rr_result.reason}`);
               return false;
             }
 
             if (matchRegex(rr.content?.message, banRules.comments.comment)) {
-              log.debug(`${rr}\r\n[BLOCK SUB TEXT] ${rr.content?.message}`);
+              log.info(`[楼中楼] ${rr.content?.message}`);
               return false;
             }
 
@@ -250,89 +413,64 @@
         return true;
       });
 
-      log.debug(
-        `[FILTER DONE] ${source}`,
-        `before=${before}, after=${json.data.replies.length}`,
-      );
-
       return json;
     } catch (e) {
-      log.warn("[FILTER ERROR]", e);
+      log.error("[FILTER ERROR]", e);
       return json;
     }
   }
 
-  /*************************************************
-   *  fetch hook（核心）
-   *************************************************/
-  const rawFetch = window.fetch;
+  /**
+   * Fetch Hook
+   */
+  const pageWindow = unsafeWindow;
+  const rawFetch = pageWindow.fetch;
 
-  window.fetch = async function (...args) {
-    const url = args[0]?.url || args[0];
-    const res = await rawFetch(...args);
+  pageWindow.fetch = async function (...args) {
+    const input = args[0];
 
-    try {
-      if (
-        typeof url === "string" &&
-        (url.includes("/x/v2/reply") || url.includes("/x/v2/reply/wbi/main"))
-      ) {
-        log.debug("[FETCH HIT]", url);
+    const url = typeof input === "string" ? input : input?.url || "";
 
-        const clone = res.clone();
-        const json = await clone.json();
+    // 临时记录所有 Fetch，用于确定请求是否经过此 Hook。
+    log.trace("[FETCH ENTER]", url);
 
-        const filtered = filterReplyData(json, "fetch");
+    // 调用原始 Fetch，保持页面原有请求行为。
+    const res = await Reflect.apply(rawFetch, this, args);
 
-        return new Response(JSON.stringify(filtered), {
-          status: res.status,
-          statusText: res.statusText,
-          headers: res.headers,
-        });
-      }
-    } catch (e) {
-      log.warn("[FETCH HOOK ERROR]", e);
+    if (
+      typeof url !== "string" ||
+      !REPLY_API_PATHS.some((path) => url.includes(path))
+    ) {
+      return res;
     }
 
-    return res;
-  };
+    log.debug("[FETCH MATCH]", url);
 
-  /*************************************************
-   *  XHR hook（兼容旧请求）
-   *************************************************/
-  const open = XMLHttpRequest.prototype.open;
-  const send = XMLHttpRequest.prototype.send;
-
-  XMLHttpRequest.prototype.open = function (method, url) {
-    this._url = url;
-    return open.apply(this, arguments);
-  };
-
-  XMLHttpRequest.prototype.send = function () {
-    this.addEventListener("readystatechange", function () {
-      if (this.readyState !== 4) return;
-
-      try {
-        if (this._url?.includes("/x/v2/reply")) {
-          log.debug("[XHR HIT]", this._url);
-
-          const json = JSON.parse(this.responseText);
-
-          const filtered = filterReplyData(json, "xhr");
-
-          Object.defineProperty(this, "responseText", {
-            value: JSON.stringify(filtered),
-          });
-        }
-      } catch (e) {
-        log.warn("[XHR HOOK ERROR]", e);
+    try {
+      if (res.status === 0 || [204, 205, 304].includes(res.status)) {
+        return res;
       }
-    });
 
-    return send.apply(this, arguments);
+      const json = await res.clone().json();
+
+      const filtered = filterReplyData(json);
+
+      const headers = new pageWindow.Headers(res.headers);
+
+      // 响应体已重新生成，删除原响应体对应的长度和编码信息。
+      headers.delete("content-length");
+      headers.delete("content-encoding");
+
+      return new pageWindow.Response(JSON.stringify(filtered), {
+        status: res.status,
+        statusText: res.statusText,
+        headers,
+      });
+    } catch (e) {
+      log.error("[FETCH HOOK ERROR]", e);
+      return res;
+    }
   };
 
-  /*************************************************
-   *  启动提示
-   *************************************************/
-  log.trace("initialized");
+  log.debug("[FETCH HOOK INSTALLED]", pageWindow.fetch !== rawFetch);
 })();

@@ -2,7 +2,7 @@
 
 // ==UserScript==
 // @name         知乎问题API拦截过滤
-// @version      2026.9.28.8
+// @version      2026.10.14.22
 // @description  Hook API response，过滤问题后再返回浏览器渲染
 // @author       inci
 // @license      MIT
@@ -112,11 +112,11 @@
     return { status, reason };
   }
 
-  // 共享空匹配器，避免重复创建
-  const NEVER_MATCH = { test: () => false };
-
-  // 创建关键词匹配器 , 支持: 普通关键词 ， 正则(格式： "/xxxxxxx/")
+  // 创建关键词匹配器 , 支持: 普通关键词 ， 正则(格式： "/xxxxxxx/flags")
   function createKeywordReg(list) {
+    // 共享空匹配器，避免重复创建
+    const NEVER_MATCH = { test: () => false };
+
     if (!Array.isArray(list) || list.length === 0) return NEVER_MATCH;
 
     const regexList = [];

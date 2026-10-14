@@ -2,7 +2,7 @@
 
 // ==UserScript==
 // @name         知乎过滤的关键词
-// @version      2026.9.28.8
+// @version      2026.10.14.22
 // @namespace    https://github.com/in-ci/Tampermonkey
 // @description  知乎过滤的关键词
 // @author       inci
@@ -50,9 +50,7 @@
   // prettier-ignore
   let qUidExact = [
     "ds-54-36","zhao-zi-han-58-57","71-40-19-83-89","da-shen-shuo-82","17sui-shao-nu-59","yi-bo-zui-shuai","kiki-8-31-7",
-
-    // 提问机器人
-    "97-88-88-89","jun-ming-qian-nan-wang"
+    "97-88-88-89","jun-ming-qian-nan-wang","76-9-62-78"
   ];
 
   // 屏蔽提问 问题提出的用户简介 （正则匹配）
