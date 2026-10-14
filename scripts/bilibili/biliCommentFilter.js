@@ -2,7 +2,7 @@
 
 // ==UserScript==
 // @name         Bilibili 评论API拦截过滤
-// @version      2026.10.14.22
+// @version      2026.10.14.23
 // @description  Hook API response，过滤评论后再返回浏览器渲染
 // @author       inci
 // @license      MIT
@@ -397,12 +397,12 @@
           r.replies = r.replies.filter((rr) => {
             const rr_result = filterUser(rr.member);
             if (rr_result.status) {
-              log.info(`[楼中楼] ${rr.member?.uname}, ${rr_result.reason}`);
+              log.info(`[楼中楼] ${rr.member?.uname} : ${rr_result.reason}`);
               return false;
             }
 
             if (matchRegex(rr.content?.message, banRules.comments.comment)) {
-              log.info(`[楼中楼] ${rr.content?.message}`);
+              log.info(`[楼中楼] ${rr.member?.uname} : ${rr.content?.message}`);
               return false;
             }
 
